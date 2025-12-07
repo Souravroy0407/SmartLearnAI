@@ -5,12 +5,12 @@ import clsx from 'clsx';
 
 const Sidebar = () => {
     const navItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-        { icon: FileCheck, label: 'Exam Checker', path: '/exam-checker' },
-        { icon: Calendar, label: 'Study Planner', path: '/study-planner' },
-        { icon: BrainCircuit, label: 'Adaptive Quiz', path: '/adaptive-quiz' },
-        { icon: MessageSquare, label: 'Doubt Solver', path: '/doubt-solver' },
-        { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+        { icon: FileCheck, label: 'Exam Checker', path: '/dashboard/exam-checker' },
+        { icon: Calendar, label: 'Study Planner', path: '/dashboard/study-planner' },
+        { icon: BrainCircuit, label: 'Adaptive Quiz', path: '/dashboard/adaptive-quiz' },
+        { icon: MessageSquare, label: 'Doubt Solver', path: '/dashboard/doubt-solver' },
+        { icon: BarChart3, label: 'Analytics', path: '/dashboard/analytics' },
     ];
 
     return (

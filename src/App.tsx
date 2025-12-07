@@ -8,11 +8,14 @@ import AdaptiveQuiz from './pages/AdaptiveQuiz';
 import DoubtSolver from './pages/DoubtSolver';
 import Analytics from './pages/Analytics';
 
+import LandingPage from './pages/LandingPage';
+
 function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="/" element={<MainLayout />}>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/dashboard" element={<MainLayout />}>
                     <Route index element={<Dashboard />} />
                     <Route path="exam-checker" element={<ExamChecker />} />
                     <Route path="study-planner" element={<StudyPlanner />} />
