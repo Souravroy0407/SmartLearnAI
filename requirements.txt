@@ -4,12 +4,9 @@ lucide-react
 react-router-dom
 recharts
 tailwind-merge
-@types/node
-@types/react
-@types/react-dom
 autoprefixer
 postcss
 tailwindcss
 typescript
 vite
-@tailwindcss/postcss
+
