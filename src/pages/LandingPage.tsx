@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, BrainCircuit, CheckCircle2, Play } from 'lucide-react';
+
 import { Link } from 'react-router-dom';
 
 const LandingPage = () => {
     return (
-        <div className="min-h-screen bg-white font-sans selection:bg-primary/20">
+        <div className="min-h-screen bg-background font-sans selection:bg-primary/20">
             {/* Navbar */}
             <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md z-50 border-b border-secondary-light/20">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -15,10 +16,7 @@ const LandingPage = () => {
                         <span className="font-bold text-2xl text-secondary-dark tracking-tight">SmartLearn AI</span>
                     </div>
                     <div className="flex items-center gap-6">
-                        <Link to="/dashboard" className="text-secondary font-medium hover:text-primary transition-colors">Login</Link>
-                        <Link to="/dashboard" className="bg-primary text-white px-6 py-2.5 rounded-xl font-medium hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40">
-                            Get Started
-                        </Link>
+                        <Link to="/login" className="text-secondary font-medium hover:text-primary transition-colors">Login</Link>
                     </div>
                 </div>
             </nav>
@@ -52,7 +50,7 @@ const LandingPage = () => {
                             Upload your answer sheets, get instant AI evaluation, and receive a personalized study plan. The ultimate tool for data-driven students.
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20">
-                            <Link to="/dashboard" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-primary-dark transition-all shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-1">
+                            <Link to="/login" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-primary-dark transition-all shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-1">
                                 Get Started for Free
                                 <ArrowRight className="w-5 h-5" />
                             </Link>
