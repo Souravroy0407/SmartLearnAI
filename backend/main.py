@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api import exam, chat, quiz
+from backend import auth, models, database
+
+# Create Database Tables
+models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="SmartLearn AI Backend")
 
@@ -9,6 +13,7 @@ app = FastAPI(title="SmartLearn AI Backend")
 app.include_router(exam.router, prefix="/api/exam", tags=["Exam Checker"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Doubt Solver"])
 app.include_router(quiz.router, prefix="/api/quiz", tags=["Adaptive Quiz"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 # Configure CORS to allow requests from the React frontend
 origins = [

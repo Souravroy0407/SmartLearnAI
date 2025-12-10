@@ -1,120 +1,123 @@
-import { Mail, Lock, Check, Eye, EyeOff, LogIn, ArrowRight } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import AuthLayout from '../../layouts/AuthLayout';
-
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { BrainCircuit, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import axios from 'axios';
 
 const LoginPage = () => {
     const navigate = useNavigate();
-    const [showPassword, setShowPassword] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [formData, setFormData] = useState({
-        email: '',
-        password: ''
-    });
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-
-
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
+        setLoading(true);
+        setError(null);
 
-        // Simulate API login
-        setTimeout(() => {
-            setIsLoading(false);
-            if (formData.email.includes('admin')) navigate('/admin');
-            else if (formData.email.includes('teacher')) navigate('/teacher');
-            else navigate('/dashboard');
-        }, 1200);
+        try {
+            const params = new URLSearchParams();
+            params.append('username', email); // OAuth2PasswordRequestForm expects 'username'
+            params.append('password', password);
+
+            // Note: In our custom auth.py we used UserLogin Pydantic model which expects JSON body
+            // Let's adjust to match the backend implementation we wrote in auth.py:
+            // class UserLogin(BaseModel): email: str, password: str
+
+            const response = await axios.post('http://localhost:8000/api/auth/login', {
+                email: email,
+                password: password
+            });
+
+            localStorage.setItem('token', response.data.access_token);
+            navigate('/dashboard');
+        } catch (err: any) {
+            console.error("Login Error", err);
+            setError(err.response?.data?.detail || "Invalid email or password");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
-        <AuthLayout
-            title="Welcome back"
-            subtitle="Please sign in to your account"
-        >
-            <div className="w-full">
-                {/* Role Tabs Removed */}
-
-
-                <form onSubmit={handleSubmit} className="space-y-5">
-                    <div>
-                        <label className="block text-sm font-medium text-secondary-dark mb-1.5">Email Address</label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type="email"
-                                required
-                                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium text-secondary-dark placeholder:text-gray-400"
-                                placeholder="you@example.com"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            />
-                        </div>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden border border-secondary-light/20"
+            >
+                <div className="p-8 text-center bg-primary/5">
+                    <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/20">
+                        <BrainCircuit className="w-7 h-7 text-white" />
                     </div>
-
-                    <div>
-                        <div className="flex justify-between items-center mb-1.5">
-                            <label className="block text-sm font-medium text-secondary-dark">Password</label>
-                            <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
-                                Forgot Password?
-                            </Link>
-                        </div>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                required
-                                className="w-full pl-10 pr-10 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium text-secondary-dark placeholder:text-gray-400"
-                                placeholder="••••••••"
-                                value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            >
-                                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded border border-gray-300 flex items-center justify-center cursor-pointer hover:border-primary transition-colors">
-                            {/* Checkbox Placeholder */}
-                            <Check className="w-3.5 h-3.5 text-white" />
-                            {/* In real app, make this a real input checkbox */}
-                        </div>
-                        <span className="text-sm text-secondary">Remember me for 30 days</span>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3.5 rounded-xl transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40 flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                        {isLoading ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        ) : (
-                            <>
-                                Sign In
-                                <LogIn className="w-5 h-5" />
-                            </>
-                        )}
-                    </button>
-                </form>
-
-                <div className="mt-8 text-center">
-                    <p className="text-secondary text-sm">
-                        New to SmartLearn?{' '}
-                        <Link to="/signup" className="text-primary font-semibold hover:underline inline-flex items-center gap-1">
-                            Create Account <ArrowRight className="w-4 h-4" />
-                        </Link>
-                    </p>
+                    <h2 className="text-2xl font-bold text-secondary-dark">Welcome Back</h2>
+                    <p className="text-secondary text-sm">Sign in to continue your learning journey</p>
                 </div>
-            </div>
-        </AuthLayout>
+
+                <div className="p-8 pt-6">
+                    {error && (
+                        <div className="mb-4 p-3 bg-error/10 text-error text-sm rounded-xl flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-error" />
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-semibold text-secondary-dark uppercase tracking-wide ml-1">Email Address</label>
+                            <div className="relative">
+                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className="w-full pl-12 pr-4 py-3 bg-background border border-secondary-light/20 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none text-secondary-dark"
+                                    placeholder="you@example.com"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-semibold text-secondary-dark uppercase tracking-wide ml-1">Password</label>
+                            <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full pl-12 pr-4 py-3 bg-background border border-secondary-light/20 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none text-secondary-dark"
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end">
+                            <Link to="#" className="text-xs font-medium text-primary hover:text-primary-dark transition-colors">Forgot Password?</Link>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-primary text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 disabled:opacity-70 disabled:cursor-not-allowed mt-2"
+                        >
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-5 h-5" /></>}
+                        </button>
+                    </form>
+
+                    <div className="mt-8 text-center">
+                        <p className="text-secondary text-sm">
+                            Don't have an account?{' '}
+                            <Link to="/signup" className="font-bold text-primary hover:text-primary-dark transition-colors">
+                                Create Account
+                            </Link>
+                        </p>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
     );
 };
 
