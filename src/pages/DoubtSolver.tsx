@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import axios from 'axios';
 import { Send, Image as ImageIcon, Bot, User, Sparkles, MoreHorizontal } from 'lucide-react';
 
 type Message = {
@@ -30,7 +31,7 @@ const DoubtSolver = () => {
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const handleSend = () => {
+    const handleSend = async () => {
         if (!input.trim()) return;
 
         const newMessage: Message = {
@@ -44,17 +45,31 @@ const DoubtSolver = () => {
         setInput('');
         setIsTyping(true);
 
-        // Simulate AI response
-        setTimeout(() => {
+        try {
+            const response = await axios.post('http://localhost:8000/api/chat/chat', {
+                message: input,
+                history: []
+            });
+
             const aiResponse: Message = {
                 id: Date.now() + 1,
-                text: "That's a great question! To solve this, we need to apply the conservation of energy principle. Let me break it down step-by-step...",
+                text: response.data.response,
                 sender: 'ai',
                 timestamp: new Date()
             };
             setMessages(prev => [...prev, aiResponse]);
+        } catch (error) {
+            console.error("Chat Error", error);
+            const errorMsg: Message = {
+                id: Date.now() + 1,
+                text: "Sorry, I couldn't connect to the server.",
+                sender: 'ai',
+                timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        } finally {
             setIsTyping(false);
-        }, 2000);
+        }
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {

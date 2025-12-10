@@ -7,7 +7,6 @@ import StudyPlanner from './pages/StudyPlanner';
 import AdaptiveQuiz from './pages/AdaptiveQuiz';
 import DoubtSolver from './pages/DoubtSolver';
 import Analytics from './pages/Analytics';
-
 import LandingPage from './pages/LandingPage';
 
 function App() {

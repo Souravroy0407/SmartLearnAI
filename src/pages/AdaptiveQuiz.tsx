@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrainCircuit, ChevronRight, Trophy, Timer, ArrowRight } from 'lucide-react';
 
@@ -9,46 +10,31 @@ const AdaptiveQuiz = () => {
     const [difficulty, setDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
     const [streak, setStreak] = useState(0);
 
-    const questions = [
-        {
-            id: 1,
-            question: "What is the derivative of sin(x)?",
-            options: ["cos(x)", "-cos(x)", "tan(x)", "-sin(x)"],
-            correct: 0,
-            difficulty: "Medium"
-        },
-        {
-            id: 2,
-            question: "Which law states that F = ma?",
-            options: ["Newton's First Law", "Newton's Second Law", "Newton's Third Law", "Hooke's Law"],
-            correct: 1,
-            difficulty: "Easy"
-        },
-        {
-            id: 3,
-            question: "In thermodynamics, entropy is a measure of:",
-            options: ["Heat", "Energy", "Disorder", "Work"],
-            correct: 2,
-            difficulty: "Hard"
-        },
-        {
-            id: 4,
-            question: "What is the integral of 1/x?",
-            options: ["ln|x| + C", "x + C", "1/x^2 + C", "e^x + C"],
-            correct: 0,
-            difficulty: "Medium"
-        },
-        {
-            id: 5,
-            question: "The speed of light in a vacuum is approximately:",
-            options: ["3 x 10^6 m/s", "3 x 10^8 m/s", "3 x 10^10 m/s", "3 x 10^5 m/s"],
-            correct: 1,
-            difficulty: "Easy"
-        }
-    ];
+    interface Question {
+        id: number;
+        question: string;
+        options: string[];
+        correct: string;
+        difficulty: string;
+    }
+    const [questions, setQuestions] = useState<Question[]>([]);
+
+    useEffect(() => {
+        const fetchQuestions = async () => {
+            try {
+                const response = await axios.get('http://localhost:8000/api/quiz/start');
+                setQuestions(response.data.questions);
+            } catch (error) {
+                console.error("Failed to load questions", error);
+            }
+        };
+        fetchQuestions();
+    }, []);
 
     const handleAnswer = (index: number) => {
-        const isCorrect = index === questions[currentQuestion].correct;
+        if (!questions.length) return;
+        const selectedOption = questions[currentQuestion].options[index];
+        const isCorrect = selectedOption === questions[currentQuestion].correct;
 
         if (isCorrect) {
             setScore(score + 10);

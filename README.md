@@ -2,8 +2,6 @@
 
 **SmartLearn AI** is a modern, AI-powered educational platform designed to revolutionize how students prepare for exams. It features a comprehensive dashboard with tools for exam checking, study planning, adaptive quizzing, and performance analytics.
 
-![SmartLearn AI Dashboard](./public/vite.svg) 
-*(Note: Replace with actual screenshot)*
 
 ## 🚀 Features
 

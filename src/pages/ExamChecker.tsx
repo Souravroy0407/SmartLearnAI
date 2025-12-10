@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, CheckCircle2, AlertCircle, Lightbulb, ArrowRight, X } from 'lucide-react';
 
@@ -6,13 +7,29 @@ import { Upload, CheckCircle2, AlertCircle, Lightbulb, ArrowRight, X } from 'luc
 const ExamChecker = () => {
     const [step, setStep] = useState<'upload' | 'analyzing' | 'results'>('upload');
     const [, setFile] = useState<File | null>(null);
+    const [results, setResults] = useState<any>(null); // TODO: Define strict interface
 
-    const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
+            const file = e.target.files[0];
+            setFile(file);
             setStep('analyzing');
-            // Simulate AI analysis
-            setTimeout(() => setStep('results'), 3000);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // Call Python Backend
+                const response = await axios.post('http://localhost:8000/api/exam/analyze', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                setResults(response.data);
+                setStep('results');
+            } catch (error) {
+                console.error("Analysis Failed", error);
+                alert("Failed to analyze exam. Ensure backend is running.");
+                setStep('upload');
+            }
         }
     };
 
@@ -111,14 +128,14 @@ const ExamChecker = () => {
                                         />
                                     </svg>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                        <span className="text-5xl font-bold text-secondary-dark">72</span>
-                                        <span className="text-secondary font-medium">/ 100</span>
+                                        <span className="text-5xl font-bold text-secondary-dark">{results?.score || 0}</span>
+                                        <span className="text-secondary font-medium">/ {results?.total_marks || 100}</span>
                                     </div>
                                 </div>
 
                                 <div className="flex-1 space-y-6">
                                     <div>
-                                        <h2 className="text-2xl font-bold text-secondary-dark mb-1">Midterm 1 - Physics</h2>
+                                        <h2 className="text-2xl font-bold text-secondary-dark mb-1">{results?.subject || 'Exam Result'}</h2>
                                         <p className="text-secondary">Evaluated on {new Date().toLocaleDateString()}</p>
                                     </div>
 
@@ -137,29 +154,17 @@ const ExamChecker = () => {
                                 <FeedbackCard
                                     type="strength"
                                     title="Strengths"
-                                    items={[
-                                        "Strong understanding of Kinematics concepts.",
-                                        "Correct application of Newton's Second Law in Problem 3.",
-                                        "Clear diagrams and labeling."
-                                    ]}
+                                    items={results?.strengths || []}
                                 />
                                 <FeedbackCard
                                     type="weakness"
                                     title="Areas for Improvement"
-                                    items={[
-                                        "Calculation error in Rotational Motion (Q12).",
-                                        "Missed units in final answers for Thermodynamics.",
-                                        "Explanation for Wave Theory was too brief."
-                                    ]}
+                                    items={results?.weaknesses || []}
                                 />
                                 <FeedbackCard
                                     type="tip"
                                     title="AI Improvement Tips"
-                                    items={[
-                                        "Review the formula for Moment of Inertia.",
-                                        "Practice unit conversion problems.",
-                                        "Use bullet points for theoretical answers to ensure clarity."
-                                    ]}
+                                    items={results?.tips || []}
                                 />
                             </div>
 
@@ -167,11 +172,9 @@ const ExamChecker = () => {
                             <div className="bg-white rounded-3xl shadow-sm border border-secondary-light/20 p-6">
                                 <h3 className="text-lg font-bold text-secondary-dark mb-6">Topic-wise Performance</h3>
                                 <div className="space-y-6">
-                                    <TopicBar topic="Kinematics" score={85} />
-                                    <TopicBar topic="Dynamics" score={72} />
-                                    <TopicBar topic="Thermodynamics" score={60} />
-                                    <TopicBar topic="Waves & Optics" score={65} />
-                                    <TopicBar topic="Modern Physics" score={90} />
+                                    {results?.topic_performance && Object.entries(results.topic_performance).map(([topic, score]) => (
+                                        <TopicBar key={topic} topic={topic} score={score as number} />
+                                    ))}
                                 </div>
 
                                 <div className="mt-8 pt-6 border-t border-secondary-light/10">
