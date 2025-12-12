@@ -3,11 +3,18 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 import urllib.parse
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # MSSQL Database URL (SQL Authentication)
-# Server: DESKTOP-OCEB3CK
-# User: sa
-# Password: Incorrect@123 (URL encoded as Incorrect%40123)
-params = urllib.parse.quote_plus("DRIVER={ODBC Driver 17 for SQL Server};SERVER=DESKTOP-OCEB3CK;DATABASE=SmartLearnAI;UID=sa;PWD=Incorrect@123")
+SERVER = os.getenv("DB_SERVER", "DESKTOP-OCEB3CK")
+USER = os.getenv("DB_USER", "sa")
+PASSWORD = os.getenv("DB_PASSWORD", "")
+DATABASE = os.getenv("DB_NAME", "SmartLearnAI")
+
+params = urllib.parse.quote_plus(f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={SERVER};DATABASE={DATABASE};UID={USER};PWD={PASSWORD}")
 DATABASE_URL = "mssql+pyodbc:///?odbc_connect=%s" % params
 
 # Create Engine

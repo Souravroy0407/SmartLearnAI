@@ -6,7 +6,7 @@ const AdminDashboard = () => {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-secondary-dark mb-1">Teacher Dashboard</h1>
+                    <h1 className="text-3xl font-bold text-secondary-dark mb-1">Admin Dashboard</h1>
                     <p className="text-secondary">Welcome back, Prof. Anderson. Here's what's happening today.</p>
                 </div>
                 <button className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">

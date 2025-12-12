@@ -23,7 +23,7 @@ const Dashboard = () => {
     return (
         <div className="space-y-8">
             <div>
-                <h1 className="text-2xl font-bold text-secondary-dark">Dashboard</h1>
+                <h1 className="text-2xl font-bold text-secondary-dark">Student Dashboard</h1>
                 <p className="text-secondary">Welcome back, Alex! Here's your learning summary.</p>
             </div>
 

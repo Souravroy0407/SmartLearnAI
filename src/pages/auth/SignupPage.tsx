@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BrainCircuit, Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
+import api from '../../api/axios';
 
 const SignupPage = () => {
     const navigate = useNavigate();
@@ -18,7 +18,7 @@ const SignupPage = () => {
         setError(null);
 
         try {
-            const response = await axios.post('http://localhost:8000/api/auth/register', {
+            const response = await api.post('/api/auth/register', {
                 full_name: fullName,
                 email: email,
                 password: password

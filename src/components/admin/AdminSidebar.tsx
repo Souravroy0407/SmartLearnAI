@@ -1,14 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Users, FileText, Settings, LogOut, BookOpen, Bell } from 'lucide-react';
 
+import { useAuth } from '../../context/AuthContext';
+
 const AdminSidebar = () => {
+    const { logout } = useAuth();
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
-        { icon: Users, label: 'Students', path: '/admin/students' },
-        { icon: FileText, label: 'Examinations', path: '/admin/exams' },
-        { icon: BookOpen, label: 'Course Content', path: '/admin/courses' },
-        { icon: Bell, label: 'Notifications', path: '/admin/notifications' },
-        { icon: Settings, label: 'Settings', path: '/admin/settings' },
+        { icon: Users, label: 'User Management', path: '/admin/users' },
     ];
 
     return (
@@ -21,7 +20,7 @@ const AdminSidebar = () => {
                     </div>
                     <div>
                         <h1 className="font-bold text-xl text-secondary-dark tracking-tight">SmartLearn</h1>
-                        <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">Teacher</span>
+                        <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">Admin</span>
                     </div>
                 </div>
             </div>
@@ -35,10 +34,9 @@ const AdminSidebar = () => {
                         to={item.path}
                         end={item.path === '/admin'}
                         className={({ isActive }) =>
-                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                                isActive
-                                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
-                                    : 'text-secondary hover:bg-secondary-light/10 hover:text-secondary-dark'
+                            `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
+                                ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                                : 'text-secondary hover:bg-secondary-light/10 hover:text-secondary-dark'
                             }`
                         }
                     >
@@ -50,7 +48,10 @@ const AdminSidebar = () => {
 
             {/* User Profile & Logout */}
             <div className="p-4 border-t border-secondary-light/10">
-                <button className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-error hover:bg-error/5 transition-colors">
+                <button 
+                    onClick={logout}
+                    className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-error hover:bg-error/5 transition-colors"
+                >
                     <LogOut className="w-5 h-5" />
                     <span className="font-medium">Logout</span>
                 </button>

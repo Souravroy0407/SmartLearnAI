@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BrainCircuit, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
+import api from '../../api/axios';
+import { useAuth } from '../../context/AuthContext';
 
 const LoginPage = () => {
     const navigate = useNavigate();
+    const { login } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -17,21 +19,30 @@ const LoginPage = () => {
         setError(null);
 
         try {
-            const params = new URLSearchParams();
-            params.append('username', email); // OAuth2PasswordRequestForm expects 'username'
-            params.append('password', password);
-
-            // Note: In our custom auth.py we used UserLogin Pydantic model which expects JSON body
-            // Let's adjust to match the backend implementation we wrote in auth.py:
-            // class UserLogin(BaseModel): email: str, password: str
-
-            const response = await axios.post('http://localhost:8000/api/auth/login', {
+            // Using central api client which handles baseURL and Auth headers automatically
+            const response = await api.post('/api/auth/login', {
                 email: email,
                 password: password
             });
 
-            localStorage.setItem('token', response.data.access_token);
-            navigate('/dashboard');
+            login(response.data.access_token);
+
+            // Decode token to check role and redirect accordingly
+            try {
+                const token = response.data.access_token;
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                const role = payload.role;
+
+                if (role === 'admin') {
+                    navigate('/admin');
+                } else if (role === 'teacher') {
+                    navigate('/teacher');
+                } else {
+                    navigate('/dashboard');
+                }
+            } catch (e) {
+                navigate('/dashboard'); // Fallback
+            }
         } catch (err: any) {
             console.error("Login Error", err);
             setError(err.response?.data?.detail || "Invalid email or password");

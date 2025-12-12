@@ -4,10 +4,8 @@ import { NavLink } from 'react-router-dom';
 const TeacherSidebar = () => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/teacher' },
-        { icon: Users, label: 'Students', path: '/teacher/students' },
-        { icon: BookOpen, label: 'Assignments', path: '/teacher/assignments' },
-        { icon: Clock, label: 'Schedule', path: '/teacher/schedule' },
-        { icon: Settings, label: 'Settings', path: '/teacher/settings' },
+        { icon: BookOpen, label: 'Exam Checker', path: '/teacher/exam-checker' },
+        { icon: Settings, label: 'Quiz Management', path: '/teacher/quizzes' },
     ];
 
     return (
