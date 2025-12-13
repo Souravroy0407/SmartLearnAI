@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, BookOpen, Bell } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
 
@@ -48,7 +48,7 @@ const AdminSidebar = () => {
 
             {/* User Profile & Logout */}
             <div className="p-4 border-t border-secondary-light/10">
-                <button 
+                <button
                     onClick={logout}
                     className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-error hover:bg-error/5 transition-colors"
                 >

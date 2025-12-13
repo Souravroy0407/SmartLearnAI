@@ -145,7 +145,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
 
     return (
         <>
-            <div className="h-16 bg-white border-b border-secondary-light/20 flex items-center justify-between px-4 md:px-8 fixed top-0 right-0 left-0 md:left-64 z-10">
+            <div className="h-16 bg-white border-b border-secondary-light/20 flex items-center justify-between px-4 md:px-8 fixed top-0 right-0 left-0 md:left-64 z-30">
                 <div className="flex items-center gap-4 flex-1 max-w-xl">
                     <button
                         onClick={onMenuClick}

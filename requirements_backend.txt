@@ -5,5 +5,7 @@ pydantic
 sqlalchemy
 passlib[bcrypt]
 python-jose[cryptography]
-pyodbc
+psycopg2-binary
 python-dotenv
+google-generativeai
+requests

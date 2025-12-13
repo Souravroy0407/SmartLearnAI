@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 type Theme = "dark" | "light" | "system";
 
@@ -57,7 +57,7 @@ export function ThemeProvider({
     };
 
     return (
-        <ThemeContext.Provider value={value} {...{ value }}>
+        <ThemeContext.Provider value={value}>
             {children}
         </ThemeContext.Provider>
     );

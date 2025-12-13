@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import { Send, Image as ImageIcon, Bot, User, Sparkles, MoreHorizontal } from 'lucide-react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type Message = {
     id: number;
@@ -58,11 +60,17 @@ const DoubtSolver = () => {
                 timestamp: new Date()
             };
             setMessages(prev => [...prev, aiResponse]);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Chat Error", error);
+            let errorMessage = "Sorry, I couldn't connect to the server.";
+
+            if (error.response && error.response.data && error.response.data.detail) {
+                errorMessage = `Error: ${error.response.data.detail}`;
+            }
+
             const errorMsg: Message = {
                 id: Date.now() + 1,
-                text: "Sorry, I couldn't connect to the server.",
+                text: errorMessage,
                 sender: 'ai',
                 timestamp: new Date()
             };
@@ -118,9 +126,13 @@ const DoubtSolver = () => {
                             ? 'bg-primary text-white rounded-tr-none'
                             : 'bg-white border border-secondary-light/10 rounded-tl-none shadow-sm'
                             }`}>
-                            <p className={`text-sm leading-relaxed ${msg.sender === 'user' ? 'text-white' : 'text-secondary-dark'}`}>
-                                {msg.text}
-                            </p>
+                            <div className={`text-sm leading-relaxed ${msg.sender === 'user' ? 'text-white' : 'text-secondary-dark'}`}>
+                                <div className={`prose ${msg.sender === 'user' ? 'prose-invert' : ''} prose-sm max-w-none prose-p:my-1 prose-pre:bg-gray-800 prose-pre:text-white overflow-x-auto`}>
+                                    <Markdown remarkPlugins={[remarkGfm]}>
+                                        {msg.text}
+                                    </Markdown>
+                                </div>
+                            </div>
                             <span className={`text-[10px] mt-2 block opacity-70 ${msg.sender === 'user' ? 'text-white' : 'text-secondary'}`}>
                                 {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>

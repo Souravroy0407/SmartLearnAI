@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, BookOpen, Clock, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Settings, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const TeacherSidebar = () => {
