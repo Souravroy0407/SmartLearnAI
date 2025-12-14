@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
+import api from '../api/axios';
 import { Send, Image as ImageIcon, Bot, User, Sparkles, MoreHorizontal } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -48,7 +48,7 @@ const DoubtSolver = () => {
         setIsTyping(true);
 
         try {
-            const response = await axios.post('http://localhost:8000/api/chat/chat', {
+            const response = await api.post('/api/chat/chat', {
                 message: input,
                 history: []
             });

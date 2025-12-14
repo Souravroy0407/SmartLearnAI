@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, LargeBinary
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
 from backend.database import Base
 
 class User(Base):
@@ -12,6 +13,10 @@ class User(Base):
     avatar_data = Column(LargeBinary)
     avatar_content_type = Column(String(50))
     role = Column(String(50), default="student")
+    
+    # From remote
+    energy_preference = Column(String(50), nullable=True)
+    study_tasks = relationship("StudyTask", back_populates="user")
 
 class Quiz(Base):
     __tablename__ = "quizzes"
@@ -53,3 +58,17 @@ class QuizAttempt(Base):
     total_questions = Column(Integer, default=0)
     status = Column(String(50), default="started") # started, completed
     timestamp = Column(String(50))
+
+class StudyTask(Base):
+    __tablename__ = "study_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String(255))
+    task_type = Column(String(50))  # Renamed from type to avoid keyword conflict
+    start_time = Column(DateTime)
+    duration_minutes = Column(Integer)
+    status = Column(String(50), default="pending")
+    color = Column(String(50))
+    
+    user = relationship("User", back_populates="study_tasks")

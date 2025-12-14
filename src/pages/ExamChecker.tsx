@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import api from '../api/axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, CheckCircle2, AlertCircle, Lightbulb, ArrowRight, X } from 'lucide-react';
 
@@ -20,7 +20,7 @@ const ExamChecker = () => {
 
             try {
                 // Call Python Backend
-                const response = await axios.post('http://localhost:8000/api/exam/analyze', formData, {
+                const response = await api.post('/api/exam/analyze', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
                 setResults(response.data);

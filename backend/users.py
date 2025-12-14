@@ -23,6 +23,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     avatar_url: Optional[str] = None
+    energy_preference: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -68,6 +69,10 @@ def read_users(db: Session = Depends(get_db), is_admin: bool = Depends(require_a
     # Mask binary data in list response if needed, although UserResponse schema prevents showing it unless addressed.
     # UserResponse doesn't have avatar_data field so it's safe.
     return users
+
+@router.get("/me", response_model=UserResponse)
+def read_user_me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 @router.patch("/me")
 def update_profile(user_update: UserUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
