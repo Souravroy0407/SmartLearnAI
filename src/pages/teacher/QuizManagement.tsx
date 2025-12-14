@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Clock, BarChart2, Trash2, X } from 'lucide-react';
+import { Plus, Search, FileText, Clock, BarChart2, Trash2, X, Loader2, AlertTriangle } from 'lucide-react';
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
 
@@ -25,6 +25,10 @@ const QuizManagement = () => {
     const [showAnalytics, setShowAnalytics] = useState<number | null>(null);
     const [analyticsData, setAnalyticsData] = useState<AnalyticsData[]>([]);
     const [loading, setLoading] = useState(true);
+    const [analyticsLoadingId, setAnalyticsLoadingId] = useState<number | null>(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [quizToDelete, setQuizToDelete] = useState<number | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const fetchQuizzes = async () => {
         try {
@@ -41,18 +45,29 @@ const QuizManagement = () => {
         fetchQuizzes();
     }, []);
 
-    const handleDelete = async (id: number) => {
-        if (!window.confirm("Are you sure you want to delete this quiz? This cannot be undone.")) return;
+    const handleDeleteClick = (id: number) => {
+        setQuizToDelete(id);
+        setShowDeleteModal(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!quizToDelete) return;
+        setIsDeleting(true);
         try {
-            await axios.delete(`/api/quiz/${id}`);
-            setQuizzes(quizzes.filter(q => q.id !== id));
+            await axios.delete(`/api/quiz/${quizToDelete}`);
+            setQuizzes(quizzes.filter(q => q.id !== quizToDelete));
+            setShowDeleteModal(false);
+            setQuizToDelete(null);
         } catch (error) {
             console.error("Failed to delete quiz", error);
             alert("Failed to delete quiz");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
     const handleShowAnalytics = async (quizId: number) => {
+        setAnalyticsLoadingId(quizId);
         try {
             const res = await axios.get(`/api/quiz/${quizId}/analytics`);
             setAnalyticsData(res.data);
@@ -60,6 +75,8 @@ const QuizManagement = () => {
         } catch (error) {
             console.error("Failed to fetch analytics", error);
             alert("Failed to load analytics");
+        } finally {
+            setAnalyticsLoadingId(null);
         }
     };
 
@@ -96,7 +113,7 @@ const QuizManagement = () => {
                     {loading ? <p className="p-6 text-gray-500">Loading quizzes...</p> : quizzes.length === 0 ? <p className="p-6 text-gray-500">No quizzes found. Create one to get started!</p> : quizzes.map((quiz) => (
                         <div key={quiz.id} className="border border-secondary-light/20 rounded-2xl p-5 hover:shadow-md transition-shadow relative group">
                             <button
-                                onClick={() => handleDelete(quiz.id)}
+                                onClick={() => handleDeleteClick(quiz.id)}
                                 className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                                 title="Delete Quiz"
                             >
@@ -122,16 +139,62 @@ const QuizManagement = () => {
                             <div className="flex items-center justify-between pt-4 border-t border-secondary-light/10">
                                 <button
                                     onClick={() => handleShowAnalytics(quiz.id)}
-                                    className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                                    disabled={analyticsLoadingId === quiz.id}
+                                    className="flex items-center gap-2 text-sm font-medium text-primary hover:underline disabled:opacity-70 disabled:no-underline"
                                 >
-                                    <BarChart2 className="w-4 h-4" />
-                                    View Analytics
+                                    {analyticsLoadingId === quiz.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <BarChart2 className="w-4 h-4" />
+                                    )}
+                                    {analyticsLoadingId === quiz.id ? 'Loading...' : 'View Analytics'}
                                 </button>
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
+                                <AlertTriangle className="w-6 h-6" />
+                            </div>
+                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete Quiz?</h3>
+                            <p className="text-secondary text-sm mb-6">
+                                Are you sure you want to delete this quiz? This action cannot be undone.
+                            </p>
+                            <div className="flex w-full gap-3">
+                                <button
+                                    onClick={() => setShowDeleteModal(false)}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-2.5 rounded-xl border border-secondary-light/20 font-medium text-secondary hover:bg-secondary-light/5 transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {isDeleting ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Deleting...</span>
+                                        </>
+                                    ) : (
+                                        'Delete'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
 
             {/* Creator Modal */}
             {showCreator && (

@@ -11,6 +11,7 @@ interface Quiz {
     questions_count: number;
     status: 'active' | 'attempted';
     score?: number;
+    created_at: string;
 }
 
 const StudentQuizList = () => {
@@ -36,6 +37,18 @@ const StudentQuizList = () => {
                     return { ...q, status: 'not_started' };
                 }
             }));
+
+            // Sort: Unattempted first, then by date (newest first)
+            quizzesWithStatus.sort((a: any, b: any) => {
+                const aAttempted = a.status === 'attempted';
+                const bAttempted = b.status === 'attempted';
+
+                if (aAttempted !== bAttempted) {
+                    return aAttempted ? 1 : -1; // Unattempted first
+                }
+
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
 
             setQuizzes(quizzesWithStatus);
         } catch (error) {
@@ -66,7 +79,7 @@ const StudentQuizList = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {quizzes.map((quiz) => (
-                        <div key={quiz.id} className="bg-white rounded-2xl border border-secondary-light/10 p-6 hover:shadow-lg transition-all duration-300">
+                        <div key={quiz.id} className="bg-white rounded-2xl border border-secondary-light/10 p-6 hover:shadow-lg transition-all duration-300 relative group">
                             <div className="flex justify-between items-start mb-4">
                                 <div className={`p-3 rounded-xl ${quiz.status === 'attempted' ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
                                     {quiz.status === 'attempted' ? <CheckCircle className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
@@ -78,7 +91,7 @@ const StudentQuizList = () => {
                                 )}
                             </div>
 
-                            <h3 className="text-xl font-bold text-secondary-dark mb-2">{quiz.title}</h3>
+                            <h3 className="text-xl font-bold text-secondary-dark mb-2 group-hover:text-primary transition-colors">{quiz.title}</h3>
                             <p className="text-secondary text-sm mb-6 line-clamp-2">{quiz.description}</p>
 
                             <div className="flex items-center gap-4 text-sm text-secondary mb-6">
@@ -93,18 +106,22 @@ const StudentQuizList = () => {
                             </div>
 
                             <button
-                                onClick={() => quiz.status !== 'attempted' && handleStartQuiz(quiz.id)}
+                                onClick={() => handleStartQuiz(quiz.id)}
                                 disabled={quiz.status === 'attempted'}
                                 className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${quiz.status === 'attempted'
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                    : 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
+                                        ? 'bg-secondary-light/10 text-secondary cursor-not-allowed'
+                                        : 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/25'
                                     }`}
                             >
                                 {quiz.status === 'attempted' ? (
-                                    <>Completed</>
+                                    <>
+                                        <CheckCircle className="w-5 h-5" />
+                                        Completed
+                                    </>
                                 ) : (
                                     <>
-                                        Start Quiz <Play className="w-4 h-4" />
+                                        Start Quiz
+                                        <Play className="w-5 h-5 fill-current" />
                                     </>
                                 )}
                             </button>

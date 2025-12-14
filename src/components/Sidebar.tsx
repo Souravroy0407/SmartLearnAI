@@ -23,7 +23,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
         { icon: Calendar, label: 'Study Planner', path: '/dashboard/study-planner' },
         { icon: FileText, label: 'Quizzes', path: '/dashboard/student-quizzes' },
-        { icon: BrainCircuit, label: 'Adaptive Quiz', path: '/dashboard/adaptive-quiz' },
+
         { icon: MessageSquare, label: 'Doubt Solver', path: '/dashboard/doubt-solver' },
         // { icon: FileCheck, label: 'Exam Checker', path: '/dashboard/exam-checker' }, // Optionally keep for student upload
         { icon: BarChart3, label: 'Analytics', path: '/dashboard/analytics' },

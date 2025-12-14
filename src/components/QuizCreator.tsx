@@ -1,15 +1,10 @@
 import { useState } from 'react';
-import { X, Plus, Save, CheckCircle, Trash2, HelpCircle, Clock, FileText, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, CheckCircle2, Circle, Clock } from 'lucide-react';
 import axios from '../api/axios';
-
-interface Option {
-    text: string;
-    is_correct: boolean;
-}
 
 interface Question {
     text: string;
-    options: Option[];
+    options: { text: string; is_correct: boolean }[];
 }
 
 interface QuizCreatorProps {
@@ -106,203 +101,170 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                 title,
                 description,
                 duration_minutes: parseInt(duration),
-                questions: questions.map(q => ({
-                    text: q.text,
-                    options: q.options.map(o => ({
-                        text: o.text,
-                        is_correct: o.is_correct
-                    }))
-                }))
+                questions
             });
             onSuccess();
             onClose();
-        } catch (err: any) {
-            console.error(err);
-            const errorMessage = err.response?.data?.detail || 'Failed to create quiz. Please check your connection and try again.';
-            setError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
+        } catch (error) {
+            console.error("Failed to create quiz", error);
+            setError("Failed to create quiz. Please try again.");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-0 md:p-4 overflow-hidden">
-            <div className="bg-white md:rounded-3xl w-full max-w-5xl h-full md:h-auto md:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
                 {/* Header */}
-                <div className="p-4 md:p-6 border-b border-gray-100 flex justify-between items-center bg-white z-10 sticky top-0">
+                <div className="p-6 border-b border-secondary-light/10 flex justify-between items-center">
                     <div>
-                        <h2 className="text-xl md:text-2xl font-bold text-secondary-dark flex items-center gap-2">
-                            <Plus className="w-6 h-6 text-primary" />
-                            Create New Quiz
-                        </h2>
-                        <p className="text-xs md:text-sm text-secondary hidden md:block">Design a challenge for your students</p>
+                        <h2 className="text-2xl font-bold text-secondary-dark">Create New Quiz</h2>
+                        <p className="text-secondary text-sm">Add questions and configure settings</p>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                        aria-label="Close"
-                    >
-                        <X className="w-6 h-6 text-gray-400 hover:text-gray-600" />
+                    <button onClick={onClose} className="p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                        <X className="w-6 h-6 text-secondary" />
                     </button>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 bg-gray-50/50">
-                    {/* Error Alert */}
-                    {error && (
-                        <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-medium border border-red-100 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-                            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                            <p>{error}</p>
-                        </div>
-                    )}
-
-                    {/* Basic Info Section */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-6">
-                        <div className="flex items-center gap-2 text-secondary-dark font-bold text-lg mb-2">
-                            <FileText className="w-5 h-5 text-primary" />
-                            <h3>Quiz Details</h3>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="md:col-span-2 space-y-2">
-                                <label className="text-sm font-semibold text-gray-700">Quiz Title</label>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                    {/* Basic Info */}
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-secondary-dark mb-2">Quiz Title</label>
                                 <input
                                     type="text"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    className="w-full p-3.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium"
-                                    placeholder="e.g., Advanced Mathematics Final"
+                                    className="w-full px-4 py-3 rounded-xl bg-secondary-light/5 border-none focus:ring-2 focus:ring-primary/20 text-secondary-dark placeholder-secondary/50"
+                                    placeholder="e.g., Introduction to Python Variables"
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-semibold text-gray-700 flex items-center gap-1">
-                                    <Clock className="w-4 h-4" /> Duration (min)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={duration}
-                                    onChange={(e) => setDuration(e.target.value)}
-                                    className="w-full p-3.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all font-medium"
-                                    min="1"
-                                />
+                            <div>
+                                <label className="block text-sm font-medium text-secondary-dark mb-2">Duration (minutes)</label>
+                                <div className="relative">
+                                    <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary/50" />
+                                    <input
+                                        type="number"
+                                        value={duration}
+                                        onChange={(e) => setDuration(e.target.value)}
+                                        className="w-full pl-12 pr-4 py-3 rounded-xl bg-secondary-light/5 border-none focus:ring-2 focus:ring-primary/20 text-secondary-dark"
+                                        min="1"
+                                    />
+                                </div>
                             </div>
-                            <div className="col-span-full space-y-2">
-                                <label className="text-sm font-semibold text-gray-700">Description</label>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-secondary-dark mb-2">Description</label>
                                 <textarea
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
-                                    className="w-full p-3.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all h-28 resize-none text-sm"
-                                    placeholder="What topics does this quiz cover?"
+                                    className="w-full px-4 py-3 rounded-xl bg-secondary-light/5 border-none focus:ring-2 focus:ring-primary/20 text-secondary-dark placeholder-secondary/50 min-h-[100px]"
+                                    placeholder="Brief description of what this quiz covers..."
                                 />
                             </div>
                         </div>
                     </div>
 
-                    {/* Questions Section */}
+                    {/* Questions */}
                     <div className="space-y-6">
-                        <div className="flex justify-between items-center sticky top-0 z-10 bg-gray-50/50 backdrop-blur-sm py-2">
-                            <h3 className="text-lg font-bold text-secondary-dark flex items-center gap-2">
-                                <HelpCircle className="w-5 h-5 text-primary" />
-                                Please Add Questions
-                            </h3>
-                            <button
-                                onClick={addQuestion}
-                                className="bg-white text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary px-4 py-2 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-sm"
-                            >
-                                <Plus className="w-4 h-4" /> Add Question
-                            </button>
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-secondary-dark">Questions ({questions.length})</h3>
                         </div>
 
-                        {questions.map((q, qIdx) => (
-                            <div key={qIdx} className="bg-white rounded-2xl p-4 md:p-6 border border-gray-200 shadow-sm relative group transition-all hover:shadow-md hover:border-primary/30">
-                                <div className="absolute top-4 right-4 flex gap-2">
+                        {questions.map((q, qIndex) => (
+                            <div key={qIndex} className="bg-secondary-light/5 p-6 rounded-2xl space-y-4">
+                                <div className="flex justify-between items-start gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-secondary-dark uppercase tracking-wide mb-2">
+                                            Question {qIndex + 1}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={q.text}
+                                            onChange={(e) => updateQuestion(qIndex, e.target.value)}
+                                            className="w-full px-4 py-3 rounded-xl bg-white border border-secondary-light/10 focus:ring-2 focus:ring-primary/20 text-secondary-dark"
+                                            placeholder="Enter your question here..."
+                                        />
+                                    </div>
                                     <button
-                                        onClick={() => removeQuestion(qIdx)}
-                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                        title="Remove Question"
+                                        onClick={() => removeQuestion(qIndex)}
                                         disabled={questions.length === 1}
+                                        className="mt-8 p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
                                     >
-                                        <Trash2 className="w-4 h-4" />
+                                        <Trash2 className="w-5 h-5" />
                                     </button>
                                 </div>
 
-                                <div className="space-y-5">
-                                    <div className="flex gap-4 items-start">
-                                        <div className="flex-shrink-0 w-8 h-8 bg-primary/10 text-primary rounded-lg flex items-center justify-center font-bold text-sm mt-1">
-                                            {qIdx + 1}
-                                        </div>
-                                        <div className="flex-1 mr-8">
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Question Text</label>
+                                <div className="space-y-3 pl-4 border-l-2 border-secondary-light/10">
+                                    {q.options.map((opt, oIndex) => (
+                                        <div key={oIndex} className="flex items-center gap-3">
+                                            <button
+                                                onClick={() => setCorrectOption(qIndex, oIndex)}
+                                                className={`p-1 rounded-full transition-colors ${opt.is_correct ? 'text-success' : 'text-secondary/30 hover:text-secondary/50'
+                                                    }`}
+                                            >
+                                                {opt.is_correct ? (
+                                                    <CheckCircle2 className="w-6 h-6 fill-current" />
+                                                ) : (
+                                                    <Circle className="w-6 h-6" />
+                                                )}
+                                            </button>
                                             <input
                                                 type="text"
-                                                value={q.text}
-                                                onChange={(e) => updateQuestion(qIdx, e.target.value)}
-                                                className="w-full bg-transparent border-b-2 border-gray-100 focus:border-primary outline-none py-2 font-medium text-lg placeholder-gray-300 transition-colors"
-                                                placeholder="Type your question here..."
+                                                value={opt.text}
+                                                onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+                                                className={`flex-1 px-4 py-2 rounded-lg border focus:ring-2 focus:ring-primary/20 text-sm ${opt.is_correct
+                                                    ? 'bg-success/5 border-success/30 text-secondary-dark font-medium'
+                                                    : 'bg-white border-secondary-light/10 text-secondary'
+                                                    }`}
+                                                placeholder={`Option ${oIndex + 1}`}
                                             />
+                                            <button
+                                                onClick={() => removeOption(qIndex, oIndex)}
+                                                disabled={q.options.length <= 2}
+                                                className="p-1.5 text-secondary/30 hover:text-red-400 rounded-lg transition-colors disabled:opacity-0"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
                                         </div>
-                                    </div>
-
-                                    <div className="pl-0 md:pl-12 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {q.options.map((opt, oIdx) => (
-                                            <div key={oIdx} className={`relative flex items-center p-1 rounded-xl border-2 transition-all ${opt.is_correct ? 'border-green-500 bg-green-50/30' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}>
-                                                <button
-                                                    onClick={() => setCorrectOption(qIdx, oIdx)}
-                                                    className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${opt.is_correct ? 'bg-green-500 text-white shadow-sm' : 'text-gray-300 hover:text-green-500'
-                                                        }`}
-                                                    title={opt.is_correct ? "Correct Answer" : "Mark as Correct"}
-                                                >
-                                                    <CheckCircle className={`w-5 h-5 ${opt.is_correct ? 'fill-current' : ''}`} />
-                                                </button>
-
-                                                <input
-                                                    type="text"
-                                                    value={opt.text}
-                                                    onChange={(e) => updateOption(qIdx, oIdx, e.target.value)}
-                                                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium px-3 text-secondary-dark placeholder-gray-400"
-                                                    placeholder={`Option ${oIdx + 1}`}
-                                                />
-
-                                                {q.options.length > 2 && (
-                                                    <button
-                                                        onClick={() => removeOption(qIdx, oIdx)}
-                                                        className="p-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                        <button
-                                            onClick={() => addOption(qIdx)}
-                                            className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all text-sm font-medium h-full min-h-[50px]"
-                                        >
-                                            <Plus className="w-4 h-4" /> Add Option
-                                        </button>
-                                    </div>
+                                    ))}
+                                    <button
+                                        onClick={() => addOption(qIndex)}
+                                        className="text-sm font-medium text-primary hover:text-primary-dark flex items-center gap-1 pl-9 transition-colors"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Option
+                                    </button>
                                 </div>
                             </div>
                         ))}
-                    </div>
 
-                    {/* Bottom Padding for scrolling */}
-                    <div className="h-20 md:h-0" />
+                        <button
+                            onClick={addQuestion}
+                            className="w-full py-4 border-2 border-dashed border-secondary-light/20 rounded-2xl text-secondary hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all flex items-center justify-center gap-2 font-medium"
+                        >
+                            <Plus className="w-5 h-5" />
+                            Add Another Question
+                        </button>
+                    </div>
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 md:p-6 border-t border-gray-100 bg-white flex flex-col-reverse md:flex-row justify-end gap-3 sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                <div className="p-6 border-t border-secondary-light/10 flex justify-end gap-3 bg-gray-50/50 rounded-b-3xl">
                     <button
                         onClick={onClose}
-                        className="w-full md:w-auto px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                        className="px-6 py-2.5 rounded-xl font-bold text-secondary hover:bg-secondary-light/10 transition-colors"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleSubmit}
                         disabled={loading}
-                        className="w-full md:w-auto px-8 py-3 rounded-xl font-bold text-white bg-primary hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-70 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
+                        className="px-6 py-2.5 rounded-xl font-bold bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/25 transition-all disabled:opacity-70 flex items-center gap-2"
                     >
-                        {loading ? 'Creating Quiz...' : <><Save className="w-5 h-5" /> Save Quiz</>}
+                        {loading ? 'Creating...' : 'Create Quiz'}
                     </button>
                 </div>
             </div>

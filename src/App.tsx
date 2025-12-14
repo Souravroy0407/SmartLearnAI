@@ -12,7 +12,7 @@ import TeacherLayout from './layouts/TeacherLayout';
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
 import ExamChecker from './pages/ExamChecker';
 import StudyPlanner from './pages/StudyPlanner';
-import AdaptiveQuiz from './pages/AdaptiveQuiz';
+
 import DoubtSolver from './pages/DoubtSolver';
 import Analytics from './pages/Analytics';
 import LandingPage from './pages/LandingPage';
@@ -38,7 +38,7 @@ function App() {
                             </Route>
                             <Route element={<ProtectedRoute allowedRoles={['student']} />}>
                                 <Route path="study-planner" element={<StudyPlanner />} />
-                                <Route path="adaptive-quiz" element={<AdaptiveQuiz />} />
+
                                 <Route path="doubt-solver" element={<DoubtSolver />} />
                                 <Route path="student-quizzes" element={<StudentQuizList />} />
                             </Route>
