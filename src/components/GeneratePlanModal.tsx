@@ -8,9 +8,10 @@ interface GeneratePlanModalProps {
     isOpen: boolean;
     onClose: () => void;
     onPlanGenerated: () => void;
+    energyPreference?: string | null;
 }
 
-const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated }: GeneratePlanModalProps) => {
+const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference }: GeneratePlanModalProps) => {
     const [subject, setSubject] = useState('');
     const [topics, setTopics] = useState('');
     const [examDate, setExamDate] = useState('');
@@ -28,7 +29,8 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated }: GeneratePlanMod
                 subject,
                 topics,
                 exam_date: examDate,
-                hours_per_day: Number(hoursPerDay)
+                hours_per_day: Number(hoursPerDay),
+                energy_preference: energyPreference
             });
             onPlanGenerated();
             onClose();

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2 } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
+import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
 
 interface StudyTask {
     id: number;
@@ -21,7 +22,12 @@ const StudyPlanner = () => {
     const [tasks, setTasks] = useState<StudyTask[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+    const [isPeakHourModalOpen, setIsPeakHourModalOpen] = useState(false);
+    const [isEnergyModalOpen, setIsEnergyModalOpen] = useState(false);
+    const [userEnergyPref, setUserEnergyPref] = useState<string | null>(null);
     const [weekDays, setWeekDays] = useState<{ day: string; date: number; fullDate: Date; active: boolean }[]>([]);
+    const [isOptimizing, setIsOptimizing] = useState(false);
+    const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
     // Generate week days based on selected date (or current date)
     useEffect(() => {
@@ -42,9 +48,25 @@ const StudyPlanner = () => {
         setWeekDays(days);
     }, [selectedDate]);
 
+    // Fetch user preference on mount
+    useEffect(() => {
+        const fetchUserPref = async () => {
+            try {
+                const response = await api.get('/api/users/me');
+                if (response.data.energy_preference) {
+                    setUserEnergyPref(response.data.energy_preference);
+                }
+            } catch (error) {
+                console.error("Error fetching user profile:", error);
+            }
+        };
+        fetchUserPref();
+    }, []);
+
     // Fetch tasks
     const fetchTasks = async () => {
         try {
+            setIsLoadingTasks(true);
             const startOfDay = new Date(selectedDate);
             startOfDay.setHours(0, 0, 0, 0);
 
@@ -60,12 +82,45 @@ const StudyPlanner = () => {
             setTasks(response.data);
         } catch (error) {
             console.error("Error fetching tasks:", error);
+        } finally {
+            setIsLoadingTasks(false);
         }
     };
 
     useEffect(() => {
         fetchTasks();
     }, [selectedDate]);
+
+    const handleGenerateClick = () => {
+        if (userEnergyPref) {
+            setIsAIModalOpen(true);
+        } else {
+            setIsEnergyModalOpen(true);
+        }
+    };
+
+    const handleEnergySelect = (preference: any) => {
+        setUserEnergyPref(preference);
+        setIsEnergyModalOpen(false);
+        setIsAIModalOpen(true);
+    };
+
+    const handlePeakHourUpdate = async (preference: any) => {
+        try {
+            setIsOptimizing(true);
+            // Call reoptimize endpoint
+            await api.post('/api/study-planner/reoptimize', null, {
+                params: { energy_preference: preference }
+            });
+            setUserEnergyPref(preference);
+            setIsPeakHourModalOpen(false);
+            await fetchTasks(); // Refresh tasks to show new times
+        } catch (error) {
+            console.error("Failed to reoptimize:", error);
+        } finally {
+            setIsOptimizing(false);
+        }
+    };
 
     const handleTaskCompletion = async (taskId: number, currentStatus: string) => {
         try {
@@ -99,7 +154,14 @@ const StudyPlanner = () => {
                 </div>
                 <div className="flex gap-3">
                     <button
-                        onClick={() => setIsAIModalOpen(true)}
+                        onClick={() => setIsPeakHourModalOpen(true)}
+                        className="flex items-center gap-2 bg-white text-secondary-dark border border-secondary-light/30 px-4 py-2.5 rounded-xl font-medium hover:bg-secondary-light/10 transition-colors"
+                    >
+                        <Clock className="w-5 h-5 text-primary" />
+                        Choose Peak Hour
+                    </button>
+                    <button
+                        onClick={handleGenerateClick}
                         className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-purple-500/20"
                     >
                         <Sparkles className="w-5 h-5" />
@@ -174,7 +236,12 @@ const StudyPlanner = () => {
                             Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                         </h3>
 
-                        {tasks.length === 0 ? (
+                        {isLoadingTasks ? (
+                            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-secondary-light/20">
+                                <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
+                                <p className="text-secondary font-medium">Loading your study plan...</p>
+                            </div>
+                        ) : tasks.length === 0 ? (
                             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-secondary-light/30">
                                 <p className="text-secondary mb-4">No tasks scheduled for this day.</p>
                                 <button
@@ -289,7 +356,38 @@ const StudyPlanner = () => {
                 isOpen={isAIModalOpen}
                 onClose={() => setIsAIModalOpen(false)}
                 onPlanGenerated={fetchTasks}
+                energyPreference={userEnergyPref}
             />
+
+            <EnergyPreferenceModal
+                isOpen={isEnergyModalOpen}
+                onSelect={handleEnergySelect}
+            />
+
+            <EnergyPreferenceModal
+                isOpen={isPeakHourModalOpen}
+                onSelect={handlePeakHourUpdate}
+                title="Choose your Peak Study Hour"
+                selectedPreference={userEnergyPref}
+            />
+            {isOptimizing && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
+                    >
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
+                            <Sparkles className="w-8 h-8 animate-pulse" />
+                        </div>
+                        <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
+                        <p className="text-secondary text-center mb-6">
+                            Optimizing your study plan for your peak hours...
+                        </p>
+                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 };

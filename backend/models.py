@@ -13,6 +13,7 @@ class User(Base):
     avatar_data = Column(LargeBinary)
     avatar_content_type = Column(String(50))
     role = Column(String(50), default="student")
+    energy_preference = Column(String(50), nullable=True)
     study_tasks = relationship("StudyTask", back_populates="user")
 
 class StudyTask(Base):

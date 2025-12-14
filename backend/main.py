@@ -8,6 +8,22 @@ from backend import auth, models, database, users
 # Create Database Tables
 models.Base.metadata.create_all(bind=database.engine)
 
+# Auto-Run Migration for energy_preference
+try:
+    from sqlalchemy import text
+    with database.engine.connect() as connection:
+        connection.execute(text("COMMIT")) # Ensure no transaction overrides
+        result = connection.execute(text(
+            "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'energy_preference'"
+        )).fetchone()
+        if not result:
+            print("Migrating: Adding energy_preference column...")
+            connection.execute(text("ALTER TABLE users ADD energy_preference VARCHAR(50)"))
+            connection.commit()
+            print("Migration successful.")
+except Exception as e:
+    print(f"Migration warning: {e}")
+
 app = FastAPI(title="SmartLearn AI Backend")
 
 
