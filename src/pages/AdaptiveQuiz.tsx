@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrainCircuit, ChevronRight, Trophy, Timer, ArrowRight } from 'lucide-react';
 
@@ -22,7 +22,7 @@ const AdaptiveQuiz = () => {
     useEffect(() => {
         const fetchQuestions = async () => {
             try {
-                const response = await axios.get('http://localhost:8000/api/quiz/start');
+                const response = await api.get('/api/quiz/start');
                 setQuestions(response.data.questions);
             } catch (error) {
                 console.error("Failed to load questions", error);
