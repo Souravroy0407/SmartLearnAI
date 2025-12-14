@@ -5,6 +5,10 @@ from backend.database import get_db
 from backend.models import Quiz, Question, Option, User, QuizAttempt
 from pydantic import BaseModel
 from datetime import datetime
+import google.generativeai as genai
+import os
+import json
+import re
 from backend.auth import get_current_user
 
 router = APIRouter()
@@ -42,7 +46,60 @@ class SubmissionAnswer(BaseModel):
 class QuizSubmission(BaseModel):
     answers: List[SubmissionAnswer]
 
+class GenerateQuizRequest(BaseModel):
+    subject: str
+    topic: str
+    difficulty: str
+    count: int
+
 # --- Endpoints ---
+
+@router.post("/generate-ai")
+def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(get_current_user)):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Gemini API Key not configured")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-flash-latest')
+
+    prompt = f"""
+    Generate {request.count} multiple-choice questions for a quiz.
+    
+    Subject: {request.subject}
+    Topic: {request.topic}
+    Difficulty: {request.difficulty}
+    
+    Provide the response strictly in valid JSON format with the following structure:
+    [
+        {{
+            "text": "Question text here?",
+            "options": [
+                {{"text": "Option A", "is_correct": false}},
+                {{"text": "Option B", "is_correct": true}},
+                {{"text": "Option C", "is_correct": false}},
+                {{"text": "Option D", "is_correct": false}}
+            ]
+        }}
+    ]
+    Ensure there are exactly 4 options per question and exactly one correct answer.
+    No markdown code blocks, just raw JSON.
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        text = response.text
+        
+        # Clean potential markdown formatting
+        text = re.sub(r"```json\s*", "", text)
+        text = re.sub(r"```", "", text)
+        
+        questions_data = json.loads(text)
+        return questions_data
+        
+    except Exception as e:
+        print(f"AI Generation Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate quiz: {str(e)}")
 
 @router.post("/")
 def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
