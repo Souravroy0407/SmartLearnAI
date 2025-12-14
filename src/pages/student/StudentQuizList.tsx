@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Clock, Play, CheckCircle } from 'lucide-react';
+import { FileText, Clock, Play, CheckCircle, Info, Calendar, X } from 'lucide-react';
 import axios from '../../api/axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,14 +9,62 @@ interface Quiz {
     description: string;
     duration_minutes: number;
     questions_count: number;
-    status: 'active' | 'attempted';
+    status: 'active' | 'attempted' | 'expired';
     score?: number;
     created_at: string;
+    deadline?: string;
 }
+
+interface QuizDetailsModalProps {
+    quiz: Quiz;
+    onClose: () => void;
+}
+
+const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
+    return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 relative">
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                    <X className="w-5 h-5 text-secondary" />
+                </button>
+
+                <h2 className="text-xl font-bold text-secondary-dark mb-4 pr-10">{quiz.title}</h2>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                            <Calendar className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-secondary font-medium uppercase tracking-wide">Published On</p>
+                            <p className="text-secondary-dark font-medium">{new Date(quiz.created_at).toLocaleString()}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
+                            <Clock className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-secondary font-medium uppercase tracking-wide">Deadline</p>
+                            <p className="text-secondary-dark font-medium">
+                                {quiz.deadline ? new Date(quiz.deadline).toLocaleString() : 'No Deadline'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-secondary-light/5 rounded-xl text-sm text-secondary">
+                        {quiz.description || "No description provided."}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const StudentQuizList = () => {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -105,29 +153,49 @@ const StudentQuizList = () => {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={() => handleStartQuiz(quiz.id)}
-                                disabled={quiz.status === 'attempted'}
-                                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${quiz.status === 'attempted'
+
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setSelectedQuiz(quiz)}
+                                    className="p-3 rounded-xl border-2 border-secondary-light/10 text-secondary hover:text-primary hover:border-primary/20 hover:bg-primary/5 transition-colors"
+                                    title="View Details"
+                                >
+                                    <Info className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={() => handleStartQuiz(quiz.id)}
+                                    disabled={quiz.status === 'attempted' || quiz.status === 'expired'}
+                                    className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${quiz.status === 'attempted' || quiz.status === 'expired'
                                         ? 'bg-secondary-light/10 text-secondary cursor-not-allowed'
                                         : 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/25'
-                                    }`}
-                            >
-                                {quiz.status === 'attempted' ? (
-                                    <>
-                                        <CheckCircle className="w-5 h-5" />
-                                        Completed
-                                    </>
-                                ) : (
-                                    <>
-                                        Start Quiz
-                                        <Play className="w-5 h-5 fill-current" />
-                                    </>
-                                )}
-                            </button>
+                                        }`}
+                                >
+                                    {quiz.status === 'attempted' ? (
+                                        <>
+                                            <CheckCircle className="w-5 h-5" />
+                                            Completed
+                                        </>
+                                    ) : quiz.status === 'expired' ? (
+                                        <>
+                                            <Clock className="w-5 h-5" />
+                                            Expired
+                                        </>
+                                    ) : (
+                                        <>
+                                            Start Quiz
+                                            <Play className="w-5 h-5 fill-current" />
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
+            )}
+
+            {selectedQuiz && (
+                <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
             )}
         </div>
     );

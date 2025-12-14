@@ -16,6 +16,7 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [duration, setDuration] = useState('30');
+    const [deadline, setDeadline] = useState('');
     const [questions, setQuestions] = useState<Question[]>([
         { text: '', options: [{ text: '', is_correct: false }, { text: '', is_correct: false }] }
     ]);
@@ -101,6 +102,7 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                 title,
                 description,
                 duration_minutes: parseInt(duration),
+                deadline: deadline || null,
                 questions
             });
             onSuccess();
@@ -154,6 +156,15 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                                         min="1"
                                     />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-secondary-dark mb-2">Deadline (Optional)</label>
+                                <input
+                                    type="datetime-local"
+                                    value={deadline}
+                                    onChange={(e) => setDeadline(e.target.value)}
+                                    className="w-full px-4 py-3 rounded-xl bg-secondary-light/5 border-none focus:ring-2 focus:ring-primary/20 text-secondary-dark"
+                                />
                             </div>
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-secondary-dark mb-2">Description</label>

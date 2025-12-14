@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Clock, BarChart2, Trash2, X, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Search, FileText, Clock, BarChart2, Trash2, X, Loader2, AlertTriangle, Info, Calendar } from 'lucide-react';
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
 
@@ -10,7 +10,54 @@ interface Quiz {
     duration_minutes: number;
     questions_count: number;
     created_at: string;
+    deadline?: string;
 }
+
+interface QuizDetailsModalProps {
+    quiz: Quiz;
+    onClose: () => void;
+}
+
+const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
+    return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 relative">
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                    <X className="w-5 h-5 text-secondary" />
+                </button>
+
+                <h2 className="text-xl font-bold text-secondary-dark mb-4 pr-10">{quiz.title}</h2>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                            <Calendar className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-secondary font-medium uppercase tracking-wide">Published On</p>
+                            <p className="text-secondary-dark font-medium">{new Date(quiz.created_at).toLocaleString()}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
+                            <Clock className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-secondary font-medium uppercase tracking-wide">Deadline</p>
+                            <p className="text-secondary-dark font-medium">
+                                {quiz.deadline ? new Date(quiz.deadline).toLocaleString() : 'No Deadline'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-secondary-light/5 rounded-xl text-sm text-secondary">
+                        {quiz.description || "No description provided."}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface AnalyticsData {
     student_name: string;
@@ -28,7 +75,14 @@ const QuizManagement = () => {
     const [analyticsLoadingId, setAnalyticsLoadingId] = useState<number | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [quizToDelete, setQuizToDelete] = useState<number | null>(null);
+
     const [isDeleting, setIsDeleting] = useState(false);
+    const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
+
+    const isExpired = (deadline?: string) => {
+        if (!deadline) return false;
+        return new Date() > new Date(deadline);
+    };
 
     const fetchQuizzes = async () => {
         try {
@@ -125,7 +179,13 @@ const QuizManagement = () => {
                                     <FileText className="w-6 h-6 text-primary" />
                                 </div>
                             </div>
+
                             <h3 className="text-lg font-bold text-secondary-dark mb-2">{quiz.title}</h3>
+                            {isExpired(quiz.deadline) && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mb-2">
+                                    <Clock className="w-3 h-3" /> Expired
+                                </span>
+                            )}
                             <div className="flex items-center gap-4 text-sm text-secondary mb-4">
                                 <div className="flex items-center gap-1">
                                     <FileText className="w-4 h-4" />
@@ -149,6 +209,13 @@ const QuizManagement = () => {
                                     )}
                                     {analyticsLoadingId === quiz.id ? 'Loading...' : 'View Analytics'}
                                 </button>
+                                <button
+                                    onClick={() => setSelectedQuiz(quiz)}
+                                    className="p-2 text-secondary hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                                    title="View details"
+                                >
+                                    <Info className="w-5 h-5" />
+                                </button>
                             </div>
                         </div>
                     ))}
@@ -156,92 +223,105 @@ const QuizManagement = () => {
             </div>
 
             {/* Delete Confirmation Modal */}
-            {showDeleteModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
-                                <AlertTriangle className="w-6 h-6" />
-                            </div>
-                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete Quiz?</h3>
-                            <p className="text-secondary text-sm mb-6">
-                                Are you sure you want to delete this quiz? This action cannot be undone.
-                            </p>
-                            <div className="flex w-full gap-3">
-                                <button
-                                    onClick={() => setShowDeleteModal(false)}
-                                    disabled={isDeleting}
-                                    className="flex-1 py-2.5 rounded-xl border border-secondary-light/20 font-medium text-secondary hover:bg-secondary-light/5 transition-colors disabled:opacity-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={confirmDelete}
-                                    disabled={isDeleting}
-                                    className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {isDeleting ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            <span>Deleting...</span>
-                                        </>
-                                    ) : (
-                                        'Delete'
-                                    )}
-                                </button>
+            {
+                showDeleteModal && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                            <div className="flex flex-col items-center text-center">
+                                <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
+                                    <AlertTriangle className="w-6 h-6" />
+                                </div>
+                                <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete Quiz?</h3>
+                                <p className="text-secondary text-sm mb-6">
+                                    Are you sure you want to delete this quiz? This action cannot be undone.
+                                </p>
+                                <div className="flex w-full gap-3">
+                                    <button
+                                        onClick={() => setShowDeleteModal(false)}
+                                        disabled={isDeleting}
+                                        className="flex-1 py-2.5 rounded-xl border border-secondary-light/20 font-medium text-secondary hover:bg-secondary-light/5 transition-colors disabled:opacity-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={confirmDelete}
+                                        disabled={isDeleting}
+                                        className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                                    >
+                                        {isDeleting ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span>Deleting...</span>
+                                            </>
+                                        ) : (
+                                            'Delete'
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
 
             {/* Creator Modal */}
-            {showCreator && (
-                <QuizCreator
-                    onClose={() => setShowCreator(false)}
-                    onSuccess={fetchQuizzes}
-                />
-            )}
+            {
+                showCreator && (
+                    <QuizCreator
+                        onClose={() => setShowCreator(false)}
+                        onSuccess={fetchQuizzes}
+                    />
+                )
+            }
 
             {/* Analytics Modal */}
-            {showAnalytics && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                            <h2 className="text-xl font-bold">Quiz Analytics</h2>
-                            <button onClick={() => setShowAnalytics(null)} className="p-2 hover:bg-gray-100 rounded-full">
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
-                        <div className="p-6 overflow-y-auto">
-                            {analyticsData.length === 0 ? (
-                                <p className="text-gray-500 text-center py-8">No attempts recorded yet.</p>
-                            ) : (
-                                <table className="w-full text-left">
-                                    <thead>
-                                        <tr className="border-b border-gray-200 text-sm text-gray-500">
-                                            <th className="pb-3 font-semibold">Student</th>
-                                            <th className="pb-3 font-semibold">Score</th>
-                                            <th className="pb-3 font-semibold">Date</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="text-sm">
-                                        {analyticsData.map((row, idx) => (
-                                            <tr key={idx} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                                                <td className="py-3 font-medium text-gray-900">{row.student_name}</td>
-                                                <td className="py-3 text-primary font-bold">{row.score} / {row.total}</td>
-                                                <td className="py-3 text-gray-500">{new Date(row.timestamp).toLocaleDateString()}</td>
+            {
+                showAnalytics && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
+                            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+                                <h2 className="text-xl font-bold">Quiz Analytics</h2>
+                                <button onClick={() => setShowAnalytics(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+                            <div className="p-6 overflow-y-auto">
+                                {analyticsData.length === 0 ? (
+                                    <p className="text-gray-500 text-center py-8">No attempts recorded yet.</p>
+                                ) : (
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="border-b border-gray-200 text-sm text-gray-500">
+                                                <th className="pb-3 font-semibold">Student</th>
+                                                <th className="pb-3 font-semibold">Score</th>
+                                                <th className="pb-3 font-semibold">Date</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
+                                        </thead>
+                                        <tbody className="text-sm">
+                                            {analyticsData.map((row, idx) => (
+                                                <tr key={idx} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                                                    <td className="py-3 font-medium text-gray-900">{row.student_name}</td>
+                                                    <td className="py-3 text-primary font-bold">{row.score} / {row.total}</td>
+                                                    <td className="py-3 text-gray-500">{new Date(row.timestamp).toLocaleDateString()}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+
+            {/* Details Modal */}
+            {
+                selectedQuiz && (
+                    <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
+                )
+            }
+        </div >
     );
 };
 

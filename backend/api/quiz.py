@@ -23,6 +23,7 @@ class QuizCreate(BaseModel):
     title: str
     description: str
     duration_minutes: int
+    deadline: Optional[str] = None
     questions: List[QuestionCreate]
 
 class QuizResponse(BaseModel):
@@ -31,6 +32,7 @@ class QuizResponse(BaseModel):
     description: str
     duration_minutes: int
     created_at: Optional[str] = None
+    deadline: Optional[str] = None
     questions_count: int
 
 class SubmissionAnswer(BaseModel):
@@ -52,7 +54,8 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
         description=quiz_data.description,
         duration_minutes=quiz_data.duration_minutes,
         teacher_id=teacher_id,
-        created_at=datetime.now().isoformat()
+        created_at=datetime.now().isoformat(),
+        deadline=quiz_data.deadline
     )
     db.add(new_quiz)
     db.commit()
@@ -83,6 +86,7 @@ def list_quizzes(db: Session = Depends(get_db)):
             "description": q.description,
             "duration_minutes": q.duration_minutes,
             "created_at": q.created_at,
+            "deadline": q.deadline,
             "questions_count": q_count
         })
     return results
@@ -103,11 +107,18 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
             "options": [{"id": opt.id, "text": opt.text} for opt in options] # Exclude is_correct
         })
     
+    # Check deadline
+    if quiz.deadline:
+        deadline_dt = datetime.fromisoformat(quiz.deadline)
+        if datetime.now() > deadline_dt:
+             raise HTTPException(status_code=400, detail="Quiz has expired")
+
     return {
         "id": quiz.id,
         "title": quiz.title,
         "description": quiz.description,
         "duration_minutes": quiz.duration_minutes,
+        "deadline": quiz.deadline,
         "questions": questions_data
     }
 
@@ -136,6 +147,14 @@ def get_quiz_status(quiz_id: int, db: Session = Depends(get_db), current_user: U
     
     if attempt:
         return {"status": "attempted", "score": attempt.score}
+        
+    # Check for expiration
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if quiz and quiz.deadline:
+        deadline_dt = datetime.fromisoformat(quiz.deadline)
+        if datetime.now() > deadline_dt:
+            return {"status": "expired"}
+            
     return {"status": "active"}
 
 @router.post("/{quiz_id}/submit")
@@ -146,6 +165,13 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
     existing_attempt = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id, QuizAttempt.student_id == student_id).first()
     if existing_attempt:
         raise HTTPException(status_code=400, detail="Quiz already attempted")
+
+    # Check deadline
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if quiz and quiz.deadline:
+        deadline_dt = datetime.fromisoformat(quiz.deadline)
+        if datetime.now() > deadline_dt:
+             raise HTTPException(status_code=400, detail="Time limit exceeded: Quiz has expired")
 
     score = 0
     total_questions = 0

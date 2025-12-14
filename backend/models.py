@@ -27,6 +27,7 @@ class Quiz(Base):
     duration_minutes = Column(Integer, default=30)
     teacher_id = Column(Integer, nullable=False) # ForeignKey can be added if Users table relationship is strict
     created_at = Column(String(50)) # Storing as ISO string or datetime
+    deadline = Column(String(50), nullable=True) # Optional deadline for the quiz
 
     # Relationships can be added here if needed, but keeping it simple for now
     # questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
