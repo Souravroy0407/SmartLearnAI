@@ -18,7 +18,8 @@ import Analytics from './pages/Analytics';
 import LandingPage from './pages/LandingPage';
 import UserManagement from './pages/admin/UserManagement'; // Import User Management
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
-
+import StudentQuizList from './pages/student/StudentQuizList';
+import QuizActive from './pages/student/QuizActive';
 
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
                                 <Route path="study-planner" element={<StudyPlanner />} />
                                 <Route path="adaptive-quiz" element={<AdaptiveQuiz />} />
                                 <Route path="doubt-solver" element={<DoubtSolver />} />
+                                <Route path="student-quizzes" element={<StudentQuizList />} />
                             </Route>
                             {/* Analytics is open to all dashboard users */}
                             <Route path="analytics" element={<Analytics />} />
@@ -62,6 +64,11 @@ function App() {
                             <Route path="quizzes" element={<QuizManagement />} />
                             <Route path="exam-checker" element={<ExamChecker />} />
                         </Route>
+                    </Route>
+
+                    {/* Student Exclusive Routes */}
+                    <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+                        <Route path="/student/quiz/:id" element={<QuizActive />} />
                     </Route>
                 </Routes>
             </BrowserRouter>

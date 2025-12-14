@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Calendar, BrainCircuit, MessageSquare, BarChart3 } from 'lucide-react'; // Removed FileCheck, LogOut
+import { LayoutDashboard, Calendar, BrainCircuit, MessageSquare, BarChart3, FileText } from 'lucide-react'; // Removed FileCheck, LogOut
 import clsx from 'clsx';
 // Removed useAuth import as it is unused if we remove logout logic completely, 
 // wait, we still need to know the role? "const role = user?.role || 'student';"
@@ -22,6 +22,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
         { icon: Calendar, label: 'Study Planner', path: '/dashboard/study-planner' },
+        { icon: FileText, label: 'Quizzes', path: '/dashboard/student-quizzes' },
         { icon: BrainCircuit, label: 'Adaptive Quiz', path: '/dashboard/adaptive-quiz' },
         { icon: MessageSquare, label: 'Doubt Solver', path: '/dashboard/doubt-solver' },
         // { icon: FileCheck, label: 'Exam Checker', path: '/dashboard/exam-checker' }, // Optionally keep for student upload

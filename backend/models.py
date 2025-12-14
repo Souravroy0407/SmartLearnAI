@@ -12,3 +12,44 @@ class User(Base):
     avatar_data = Column(LargeBinary)
     avatar_content_type = Column(String(50))
     role = Column(String(50), default="student")
+
+class Quiz(Base):
+    __tablename__ = "quizzes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(String(500))
+    duration_minutes = Column(Integer, default=30)
+    teacher_id = Column(Integer, nullable=False) # ForeignKey can be added if Users table relationship is strict
+    created_at = Column(String(50)) # Storing as ISO string or datetime
+
+    # Relationships can be added here if needed, but keeping it simple for now
+    # questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, nullable=False, index=True)
+    text = Column(String(500), nullable=False)
+    
+    # options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
+
+class Option(Base):
+    __tablename__ = "options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, nullable=False, index=True)
+    text = Column(String(255), nullable=False)
+    is_correct = Column(Integer, default=0) # 0 for false, 1 for true
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, nullable=False, index=True)
+    quiz_id = Column(Integer, nullable=False, index=True)
+    score = Column(Integer, default=0)
+    total_questions = Column(Integer, default=0)
+    status = Column(String(50), default="started") # started, completed
+    timestamp = Column(String(50))
