@@ -161,7 +161,7 @@ const LandingPage = () => {
                         </div>
 
                         {/* Feature 2 */}
-                        <div className="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-[2rem] p-8 shadow-lg text-white relative overflow-hidden group">
+                        <div className="bg-gradient-to-br from-purple-500 to-purple-700 rounded-[2rem] p-8 shadow-lg text-white relative overflow-hidden group">
                             <div className="relative z-10">
                                 <Rocket className="mb-6 w-12 h-12 text-purple-200" />
                                 <h3 className="text-2xl font-bold mb-2">Gamified Progress</h3>

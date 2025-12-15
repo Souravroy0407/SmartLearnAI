@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen } from 'lucide-react';
+import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
 
@@ -66,22 +67,119 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
     );
 };
 
-interface AnalyticsData {
-    student_name: string;
-    score: number;
-    total: number;
-    timestamp: string;
+interface AnalyticsModalProps {
+    quiz: Quiz;
+    onClose: () => void;
 }
+
+const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
+    const [heatmap, setHeatmap] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchAnalytics = async () => {
+            try {
+                const res = await axios.get(`/api/quiz/${quiz.id}/analytics/heatmap`);
+                setHeatmap(res.data);
+            } catch (error) {
+                console.error("Failed to fetch analytics", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAnalytics();
+    }, [quiz.id]);
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl p-8 relative max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+                <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full transition-colors z-10">
+                    <X className="w-6 h-6 text-gray-400" />
+                </button>
+
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 text-purple-600 rounded-xl">
+                        <BarChart2 className="w-6 h-6" />
+                    </div>
+                    Quiz Analytics: <span className="text-primary">{quiz.title}</span>
+                </h2>
+
+                {loading ? (
+                    <div className="py-20 flex justify-center">
+                        <div className="animate-spin w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full"></div>
+                    </div>
+                ) : (
+                    <div className="space-y-8">
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-green-50 p-6 rounded-2xl border border-green-100">
+                                <p className="text-green-600 font-medium mb-1">Avg Accuracy</p>
+                                <p className="text-3xl font-bold text-green-700">
+                                    {Math.round(heatmap.reduce((acc, q) => acc + q.accuracy, 0) / (heatmap.length || 1))}%
+                                </p>
+                            </div>
+                            <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                                <p className="text-blue-600 font-medium mb-1">Total Attempts</p>
+                                <p className="text-3xl font-bold text-blue-700">
+                                    {heatmap.length > 0 ? heatmap[0].total : 0}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Question Heatmap */}
+                        <div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-4">Question Performance Heatmap</h3>
+                            <div className="space-y-4">
+                                {heatmap.map((q, idx) => (
+                                    <div key={q.question_id} className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex gap-3">
+                                                <span className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600 flex-shrink-0">
+                                                    {idx + 1}
+                                                </span>
+                                                <p className="font-medium text-gray-800 line-clamp-2 w-full max-w-xl">{q.text}</p>
+                                            </div>
+                                            <span className={`px-3 py-1 rounded-lg text-sm font-bold flex-shrink-0 ml-2 ${q.accuracy >= 70 ? 'bg-green-100 text-green-700' :
+                                                q.accuracy >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                    'bg-red-100 text-red-700'
+                                                }`}>
+                                                {Math.round(q.accuracy)}% Correct
+                                            </span>
+                                        </div>
+                                        {/* Progress Bar */}
+                                        <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all duration-500 ${q.accuracy >= 70 ? 'bg-green-500' :
+                                                    q.accuracy >= 40 ? 'bg-yellow-500' :
+                                                        'bg-red-500'
+                                                    }`}
+                                                style={{ width: `${q.accuracy}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between mt-1 text-xs text-gray-500 font-medium">
+                                            <span>{q.correct} correct</span>
+                                            <span>{q.incorrect} incorrect</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+
 
 const QuizManagement = () => {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-    const [showCreator, setShowCreator] = useState(false);
-    const [showAnalytics, setShowAnalytics] = useState<number | null>(null);
-    const [analyticsData, setAnalyticsData] = useState<AnalyticsData[]>([]);
     const [loading, setLoading] = useState(true);
-    const [analyticsLoadingId, setAnalyticsLoadingId] = useState<number | null>(null);
+    const [showCreator, setShowCreator] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [quizToDelete, setQuizToDelete] = useState<number | null>(null);
+    const [selectedAnalyticsQuiz, setSelectedAnalyticsQuiz] = useState<Quiz | null>(null);
 
     const [isDeleting, setIsDeleting] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
@@ -92,6 +190,7 @@ const QuizManagement = () => {
     };
 
     const fetchQuizzes = async () => {
+        setLoading(true);
         try {
             const res = await axios.get('/api/quiz/');
             setQuizzes(res.data);
@@ -127,19 +226,7 @@ const QuizManagement = () => {
         }
     };
 
-    const handleShowAnalytics = async (quizId: number) => {
-        setAnalyticsLoadingId(quizId);
-        try {
-            const res = await axios.get(`/api/quiz/${quizId}/analytics`);
-            setAnalyticsData(res.data);
-            setShowAnalytics(quizId);
-        } catch (error) {
-            console.error("Failed to fetch analytics", error);
-            alert("Failed to load analytics");
-        } finally {
-            setAnalyticsLoadingId(null);
-        }
-    };
+
 
     return (
         <div className="space-y-8 relative max-w-7xl mx-auto">
@@ -168,6 +255,14 @@ const QuizManagement = () => {
                             className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border border-gray-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
                         />
                     </div>
+                    <button
+                        onClick={fetchQuizzes}
+                        disabled={loading}
+                        className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                        title="Refresh list"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
@@ -236,15 +331,11 @@ const QuizManagement = () => {
                                         Details
                                     </button>
                                     <button
-                                        onClick={() => handleShowAnalytics(quiz.id)}
-                                        disabled={analyticsLoadingId === quiz.id}
-                                        className="py-2.5 px-4 rounded-xl text-sm font-bold text-primary bg-primary/5 hover:bg-primary/10 transition-colors flex items-center justify-center gap-2"
+                                        onClick={() => setSelectedAnalyticsQuiz(quiz)}
+                                        className="py-2.5 px-4 rounded-xl text-sm font-bold text-purple-600 bg-purple-50 hover:bg-purple-100 transition-colors flex items-center justify-center gap-2"
                                     >
-                                        {analyticsLoadingId === quiz.id ? (
-                                            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                                        ) : (
-                                            'Analytics'
-                                        )}
+                                        <BarChart2 className="w-4 h-4" />
+                                        Analysis
                                     </button>
                                 </div>
                             </div>
@@ -281,57 +372,27 @@ const QuizManagement = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
-            {/* Analytics Modal */}
-            {showAnalytics && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                            <h2 className="text-xl font-bold text-gray-900">Quiz Analytics</h2>
-                            <button onClick={() => setShowAnalytics(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-6 overflow-y-auto">
-                            {analyticsData.length === 0 ? (
-                                <div className="text-center py-12 text-gray-400">
-                                    <p>No attempts recorded yet.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {analyticsData.map((data, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                                            <div>
-                                                <p className="font-bold text-gray-900">{data.student_name}</p>
-                                                <p className="text-xs text-gray-500 font-medium mt-1">{new Date(data.timestamp).toLocaleString()}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <span className={`inline-block px-3 py-1 rounded-lg text-sm font-bold ${(data.score / data.total) >= 0.7
-                                                    ? 'bg-green-100 text-green-700'
-                                                    : (data.score / data.total) >= 0.4
-                                                        ? 'bg-yellow-100 text-yellow-700'
-                                                        : 'bg-red-100 text-red-700'
-                                                    }`}>
-                                                    {data.score} / {data.total}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+
 
             {/* Details Modal */}
-            {selectedQuiz && (
-                <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
+            {
+                selectedQuiz && (
+                    <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
+                )
+            }
+
+            {selectedAnalyticsQuiz && (
+                <AnalyticsModal
+                    quiz={selectedAnalyticsQuiz}
+                    onClose={() => setSelectedAnalyticsQuiz(null)}
+                />
             )}
 
             {showCreator && <QuizCreator onClose={() => setShowCreator(false)} onSuccess={fetchQuizzes} />}
-        </div>
+        </div >
     );
 };
 

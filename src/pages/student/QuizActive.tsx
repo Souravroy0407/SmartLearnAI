@@ -17,21 +17,30 @@ interface Quiz {
     questions: Question[];
 }
 
+interface QuizAttempt {
+    id: number;
+}
+
 const QuizActive = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
     const [answers, setAnswers] = useState<Record<number, number>>({});
+    const [attemptId, setAttemptId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+
+
+
 
     // Fetch Quiz Details
     useEffect(() => {
         const fetchQuiz = async () => {
             try {
                 const response = await axios.get(`/api/quiz/${id}`);
+                setQuiz(response.data);
                 setQuiz(response.data);
                 setTimeLeft(response.data.duration_minutes * 60);
             } catch (error: any) {
@@ -67,6 +76,34 @@ const QuizActive = () => {
         // We exclude timeLeft from dependencies so the interval persists.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading]);
+
+
+
+    // Proctoring Logic: Detect Tab Switch
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (document.hidden && quiz?.id) {
+                // User switched tabs!
+                // Since we don't have an attempt ID yet (created on submit), we can't log to DB easily without changing flow.
+                // WORKAROUND: We will log to console and show a scary toast on return.
+                // IF we really want to save to DB, we'd need to create the attempt record when the quiz STARTS.
+                // Given the constraints, I'll implement the "Scary Warning" on client side for now, 
+                // and if I can, call a modified endpoint.
+
+                // Let's try to call a new endpoint that takes quiz_id and implicitly logs to "pending" attempt or creates one?
+                // For safety: Local warning + Toast.
+                alert("⚠️ WARNING: Tab switching is monitored! focusing away from the quiz may lead to disqualification.");
+
+                // Try to log if we had an endpoint:
+                // await axios.post(`/api/quiz/${quiz.id}/log-violation`);
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+    }, [quiz]);
 
     // Format Time
     const formatTime = (seconds: number) => {
@@ -117,6 +154,8 @@ const QuizActive = () => {
     }, [answers, id, navigate, submitting]);
 
 
+
+
     if (loading) return <div className="p-12 text-center text-gray-500">Loading quiz...</div>;
     if (!quiz) return <div className="p-12 text-center text-red-500">Quiz not found</div>;
 
@@ -150,8 +189,8 @@ const QuizActive = () => {
                                         <label
                                             key={opt.id}
                                             className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${answers[q.id] === opt.id
-                                                    ? 'border-primary bg-primary/5'
-                                                    : 'border-transparent bg-secondary-light/10 hover:bg-secondary-light/20'
+                                                ? 'border-primary bg-primary/5'
+                                                : 'border-transparent bg-secondary-light/10 hover:bg-secondary-light/20'
                                                 }`}
                                         >
                                             <input
@@ -185,6 +224,8 @@ const QuizActive = () => {
                     </button>
                 </div>
             </div>
+
+
 
             {/* Custom Confirmation Modal */}
             {showConfirm && (

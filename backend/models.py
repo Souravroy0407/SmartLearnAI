@@ -59,6 +59,21 @@ class QuizAttempt(Base):
     total_questions = Column(Integer, default=0)
     status = Column(String(50), default="started") # started, completed
     timestamp = Column(String(50))
+    warnings_count = Column(Integer, default=0)
+
+    student_answers = relationship("StudentAnswer", back_populates="attempt", cascade="all, delete-orphan")
+
+class StudentAnswer(Base):
+    __tablename__ = "student_answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    attempt_id = Column(Integer, ForeignKey("quiz_attempts.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    selected_option_id = Column(Integer, ForeignKey("options.id"), nullable=False)
+    is_correct = Column(Integer, default=0) # Using Integer as Boolean (0/1) for SQLite compatibility
+
+    attempt = relationship("QuizAttempt", back_populates="student_answers")
+
 
 class StudyTask(Base):
     __tablename__ = "study_tasks"

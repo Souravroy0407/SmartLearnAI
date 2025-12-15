@@ -162,7 +162,7 @@ const StudyPlanner = () => {
                     </button>
                     <button
                         onClick={handleGenerateClick}
-                        className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-purple-500/20"
+                        className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-pink-600 text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-pink-500/20"
                     >
                         <Sparkles className="w-5 h-5" />
                         Generate with AI

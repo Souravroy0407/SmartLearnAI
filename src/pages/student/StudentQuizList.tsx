@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle } from 'lucide-react';
+import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, RefreshCw } from 'lucide-react';
 import axios from '../../api/axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -80,6 +80,7 @@ const StudentQuizList = () => {
     }, []);
 
     const fetchQuizzes = async () => {
+        setLoading(true);
         try {
             const res = await axios.get('/api/quiz/');
             // Backend now filters and returns status/score directly!
@@ -136,6 +137,14 @@ const StudentQuizList = () => {
                             className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border border-gray-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
                         />
                     </div>
+                    <button
+                        onClick={fetchQuizzes}
+                        disabled={loading}
+                        className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                        title="Refresh list"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from backend.database import get_db
-from backend.models import Quiz, Question, Option, User, QuizAttempt
+from backend.models import Quiz, Question, Option, User, QuizAttempt, StudentAnswer
 from pydantic import BaseModel
 from datetime import datetime
 import google.generativeai as genai
@@ -41,6 +41,7 @@ class QuizResponse(BaseModel):
     questions_count: int
     status: Optional[str] = "active"
     score: Optional[int] = None
+    warnings_count: Optional[int] = 0
 
 class SubmissionAnswer(BaseModel):
     question_id: int
@@ -310,8 +311,70 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
     db.add(new_attempt)
     db.commit()
     db.refresh(new_attempt)
+
+    # Save Student Answers
+    for answer in submission.answers:
+        option = options_map.get(answer.selected_option_id)
+        is_correct = 1 if (option and option.is_correct) else 0
+        
+        student_ans = StudentAnswer(
+            attempt_id=new_attempt.id,
+            question_id=answer.question_id,
+            selected_option_id=answer.selected_option_id,
+            is_correct=is_correct
+        )
+        db.add(student_ans)
+    
+    db.commit()
     
     return {"message": "Quiz submitted successfully", "score": score, "total": total_questions}
+
+@router.post("/attempt/{attempt_id}/warning")
+def record_warning(attempt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Verify attempt belongs to user
+    attempt = db.query(QuizAttempt).filter(QuizAttempt.id == attempt_id, QuizAttempt.student_id == current_user.id).first()
+    if not attempt:
+         raise HTTPException(status_code=404, detail="Attempt not found")
+    
+    attempt.warnings_count += 1
+    db.commit()
+    return {"message": "Warning recorded", "count": attempt.warnings_count}
+
+@router.get("/{quiz_id}/analytics/heatmap")
+def get_quiz_heatmap(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Check quiz exists
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+        
+    questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    
+    results = []
+    for q in questions:
+        # Aggregate stats
+        total_answers = db.query(StudentAnswer).join(QuizAttempt).filter(
+            StudentAnswer.question_id == q.id,
+            QuizAttempt.quiz_id == quiz_id
+        ).count()
+        
+        correct_answers = db.query(StudentAnswer).join(QuizAttempt).filter(
+            StudentAnswer.question_id == q.id,
+            StudentAnswer.is_correct == 1,
+            QuizAttempt.quiz_id == quiz_id
+        ).count()
+        
+        incorrect_answers = total_answers - correct_answers
+        
+        results.append({
+            "question_id": q.id,
+            "text": q.text,
+            "correct": correct_answers,
+            "incorrect": incorrect_answers,
+            "total": total_answers,
+            "accuracy": (correct_answers / total_answers * 100) if total_answers > 0 else 0
+        })
+        
+    return results
 
 @router.get("/{quiz_id}/analytics")
 def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
