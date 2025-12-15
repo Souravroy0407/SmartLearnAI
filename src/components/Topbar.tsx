@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, Upload } from 'lucide-react';
+import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import Cropper from 'react-easy-crop';
@@ -62,6 +62,20 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
         setCroppedAreaPixels(croppedAreaPixels);
     };
 
+    // Toast State
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => setToast(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toast]);
+
+    const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+        setToast({ message, type });
+    };
+
     const handleUploadCroppedImage = async () => {
         try {
             setIsLoading(true);
@@ -95,15 +109,14 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
 
             setIsCropModalOpen(false);
             setImageSrc(null); // Clear raw image
+            // No success message needed for upload per se, or maybe yes? logic below implies update profile is the main one.
+            // But this is separate upload. Let's add success here too.
+            // showToast("Avatar uploaded successfully!"); // Optional, but usually strictly required by user? 
+            // Actually user asked about "Profile updated successfully" which is in handleSaveProfile.
         } catch (error: any) {
             console.error("Failed to upload image", error);
-            if (error.response) {
-                alert(`Failed to upload image: Server responded with ${error.response.status} ${error.response.statusText}\n${JSON.stringify(error.response.data)}`);
-            } else if (error.request) {
-                alert("Failed to upload image: No response from server. Check if backend is running.");
-            } else {
-                alert(`Failed to upload image: ${error.message}`);
-            }
+            const msg = error.response?.data?.detail || error.message || "Failed to upload image";
+            showToast(msg, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -126,18 +139,13 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                 login(response.data.access_token);
             }
 
-            alert("Profile updated successfully!");
+            showToast("Profile updated successfully!", 'success');
             setIsEditModalOpen(false);
             setIsDropdownOpen(false);
         } catch (error: any) {
             console.error("Failed to update profile", error);
-            if (error.response) {
-                alert(`Failed to update profile: Server responded with ${error.response.status} ${error.response.statusText}\n${JSON.stringify(error.response.data)}`);
-            } else if (error.request) {
-                alert("Failed to update profile: No response from server. Check if backend is running.");
-            } else {
-                alert(`Failed to update profile: ${error.message}`);
-            }
+            const msg = error.response?.data?.detail || error.message || "Failed to update profile";
+            showToast(msg, 'error');
         } finally {
             setIsLoading(false);
         }
@@ -330,6 +338,19 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-white border-l-4 border-green-500 text-gray-800' : 'bg-white border-l-4 border-red-500 text-gray-800'
+                    }`}>
+                    <div className={`p-1 rounded-full ${toast.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                    </div>
+                    <span className="font-medium text-sm">{toast.message}</span>
+                    <button onClick={() => setToast(null)} className="ml-2 text-gray-400 hover:text-gray-600">
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
             )}
         </>

@@ -82,20 +82,11 @@ const StudentQuizList = () => {
     const fetchQuizzes = async () => {
         try {
             const res = await axios.get('/api/quiz/');
+            // Backend now filters and returns status/score directly!
             const quizzesData = res.data;
 
-            // Fetch status for each quiz
-            const quizzesWithStatus = await Promise.all(quizzesData.map(async (q: any) => {
-                try {
-                    const statusRes = await axios.get(`/api/quiz/${q.id}/status`);
-                    return { ...q, ...statusRes.data }; // Merges status and score
-                } catch (e) {
-                    return { ...q, status: 'not_started' };
-                }
-            }));
-
             // Sort: Unattempted first, then by date (newest first)
-            quizzesWithStatus.sort((a: any, b: any) => {
+            quizzesData.sort((a: any, b: any) => {
                 const aAttempted = a.status === 'attempted';
                 const bAttempted = b.status === 'attempted';
 
@@ -106,7 +97,7 @@ const StudentQuizList = () => {
                 return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             });
 
-            setQuizzes(quizzesWithStatus);
+            setQuizzes(quizzesData);
         } catch (error) {
             console.error('Failed to fetch quizzes:', error);
         } finally {
@@ -166,8 +157,8 @@ const StudentQuizList = () => {
                             <div key={quiz.id} className="group bg-white border border-gray-100 rounded-3xl p-6 hover:shadow-xl hover:shadow-gray-200/50 hover:border-primary/20 transition-all duration-300 relative flex flex-col">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className={`p-3.5 rounded-2xl transition-transform duration-300 group-hover:scale-110 ${quiz.status === 'attempted' ? 'bg-green-100 text-green-600' :
-                                            quiz.status === 'expired' ? 'bg-red-100 text-red-600' :
-                                                'bg-gradient-to-br from-primary/10 to-primary/5 text-primary'
+                                        quiz.status === 'expired' ? 'bg-red-100 text-red-600' :
+                                            'bg-gradient-to-br from-primary/10 to-primary/5 text-primary'
                                         }`}>
                                         {quiz.status === 'attempted' ? <CheckCircle className="w-6 h-6" /> :
                                             quiz.status === 'expired' ? <AlertTriangle className="w-6 h-6" /> :
@@ -206,8 +197,8 @@ const StudentQuizList = () => {
                                         onClick={() => handleStartQuiz(quiz.id)}
                                         disabled={quiz.status === 'attempted' || quiz.status === 'expired'}
                                         className={`py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:-translate-y-0.5 active:translate-y-0 ${quiz.status === 'attempted' || quiz.status === 'expired'
-                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
-                                                : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
+                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
+                                            : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
                                             }`}
                                     >
                                         {quiz.status === 'attempted' ? (

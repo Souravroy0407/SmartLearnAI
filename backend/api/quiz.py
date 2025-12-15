@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from backend.database import get_db
 from backend.models import Quiz, Question, Option, User, QuizAttempt
@@ -38,6 +39,8 @@ class QuizResponse(BaseModel):
     created_at: Optional[str] = None
     deadline: Optional[str] = None
     questions_count: int
+    status: Optional[str] = "active"
+    score: Optional[int] = None
 
 class SubmissionAnswer(BaseModel):
     question_id: int
@@ -132,11 +135,38 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
     return {"message": "Quiz created successfully", "quiz_id": new_quiz.id}
 
 @router.get("/", response_model=List[QuizResponse])
-def list_quizzes(db: Session = Depends(get_db)):
+def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     quizzes = db.query(Quiz).all()
+    
+    # Optimize: Fetch all question counts in one query
+    question_counts = db.query(Question.quiz_id, func.count(Question.id)).group_by(Question.quiz_id).all()
+    counts_map = {quiz_id: count for quiz_id, count in question_counts}
+    
+    # Fetch attempts for the current user in one query
+    student_id = current_user.id
+    attempts = db.query(QuizAttempt).filter(QuizAttempt.student_id == student_id).all()
+    attempts_map = {att.quiz_id: att for att in attempts}
+
     results = []
+    now = datetime.now()
+
     for q in quizzes:
-        q_count = db.query(Question).filter(Question.quiz_id == q.id).count()
+        # Determine status
+        status = "active"
+        score = None
+        
+        attempt = attempts_map.get(q.id)
+        if attempt:
+            status = "attempted"
+            score = attempt.score
+        elif q.deadline:
+            try:
+                deadline_dt = datetime.fromisoformat(q.deadline)
+                if now > deadline_dt:
+                    status = "expired"
+            except ValueError:
+                pass # Invalid date format fallback
+
         results.append({
             "id": q.id,
             "title": q.title,
@@ -144,7 +174,9 @@ def list_quizzes(db: Session = Depends(get_db)):
             "duration_minutes": q.duration_minutes,
             "created_at": q.created_at,
             "deadline": q.deadline,
-            "questions_count": q_count
+            "questions_count": counts_map.get(q.id, 0),
+            "status": status,
+            "score": score
         })
     return results
 
@@ -155,9 +187,24 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Quiz not found")
     
     questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    
+    # Optimize: Fetch all options for these questions in one query
+    question_ids = [q.id for q in questions]
+    all_options = []
+    if question_ids:
+        all_options = db.query(Option).filter(Option.question_id.in_(question_ids)).all()
+    
+    # Group options by question_id
+    options_by_question = {}
+    for opt in all_options:
+        if opt.question_id not in options_by_question:
+            options_by_question[opt.question_id] = []
+        options_by_question[opt.question_id].append(opt)
+
     questions_data = []
     for q in questions:
-        options = db.query(Option).filter(Option.question_id == q.id).all()
+        # Get options from map instead of DB query
+        options = options_by_question.get(q.id, [])
         questions_data.append({
             "id": q.id,
             "text": q.text,
@@ -231,13 +278,23 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
              raise HTTPException(status_code=400, detail="Time limit exceeded: Quiz has expired")
 
     score = 0
-    total_questions = 0
+    total_questions = len(submission.answers) # Update total based on submission length
     
+    # Optimize: Fetch all selected options in one query
+    submitted_option_ids = [answer.selected_option_id for answer in submission.answers]
+    # Filter only existing and correct options to verify
+    # If an option is not found or not correct, it won't be in this list (if we filtered by is_correct=True)
+    # But to be safe and simple, let's fetch all submitted options and check in python
+    if submitted_option_ids:
+        fetched_options = db.query(Option).filter(Option.id.in_(submitted_option_ids)).all()
+        options_map = {opt.id: opt for opt in fetched_options}
+    else:
+        options_map = {}
+
     # Calculate score
     for answer in submission.answers:
-        total_questions += 1
-        # Check if option is correct (Optimized: fetch option and check is_correct)
-        option = db.query(Option).filter(Option.id == answer.selected_option_id).first()
+        # Check if option is correct
+        option = options_map.get(answer.selected_option_id)
         if option and option.is_correct:
             score += 1
             
