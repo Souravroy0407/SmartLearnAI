@@ -37,7 +37,10 @@ app.include_router(users.router)
 
 # Configure CORS to allow requests from the React frontend
 origins = [
-    "*", # Allow all origins for mobile testing and development
+    "http://localhost:5173",
+    "https://smartlearnai-frontend.netlify.app",
+    "https://smartlearnai-frontend.netlify.app/",
+    "*", # Allow all for simplicity during dev, but explicit above is better for credentials
 ]
 
 app.add_middleware(

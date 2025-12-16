@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_BASE_URL = "https://web-production-03b7.up.railway.app";
+export const API_BASE_URL = "https://smartlearn-ai.up.railway.app";
 
 const api = axios.create({
     baseURL: API_BASE_URL,
