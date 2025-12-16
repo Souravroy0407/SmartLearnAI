@@ -1,8 +1,7 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
+import api, { API_BASE_URL } from '../api/axios';
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../utils/cropImage';
 
@@ -88,9 +87,8 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
             formData.append('file', croppedImageBlob, 'avatar.jpg');
 
             const token = localStorage.getItem('token');
-            const response = await axios.post('/api/users/upload-avatar', formData, {
+            const response = await api.post('/api/users/upload-avatar', formData, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'multipart/form-data',
                 },
             });
@@ -125,14 +123,9 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
     const handleSaveProfile = async () => {
         try {
             setIsLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.patch('/api/users/me', {
+            const response = await api.patch('/api/users/me', {
                 full_name: editName,
                 avatar_url: editAvatarUrl
-            }, {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
             });
 
             if (response.data.access_token) {
@@ -188,7 +181,11 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             </div>
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                                 {user?.avatar_url ? (
-                                    <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                                    <img
+                                        src={user.avatar_url.startsWith('http') ? user.avatar_url : `${API_BASE_URL}${user.avatar_url}`}
+                                        alt="Profile"
+                                        className="w-full h-full object-cover"
+                                    />
                                 ) : (
                                     <User className="w-5 h-5 text-primary" />
                                 )}
@@ -234,7 +231,11 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                 <div className="relative group cursor-pointer w-24 h-24" onClick={() => fileInputRef.current?.click()}>
                                     <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
                                         {editAvatarUrl ? (
-                                            <img src={editAvatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                                            <img
+                                                src={editAvatarUrl.startsWith('http') ? editAvatarUrl : `${API_BASE_URL}${editAvatarUrl}`}
+                                                alt="Preview"
+                                                className="w-full h-full object-cover"
+                                            />
                                         ) : (
                                             <User className="w-10 h-10 text-primary" />
                                         )}
