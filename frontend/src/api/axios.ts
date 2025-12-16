@@ -1,18 +1,9 @@
 import axios from 'axios';
 
-// Dynamically determine the base URL based on the current window location
-// This allows the app to work on localhost and on local network (e.g. mobile testing)
-// without manual code changes.
-const getBaseUrl = () => {
-    const { hostname } = window.location;
-
-    // Assuming backend always runs on port 8000
-    // If you are using https in production, this logic might need adjustment
-    return `http://${hostname}:8000`;
-};
+const API_BASE_URL = "https://web-production-03b7.up.railway.app";
 
 const api = axios.create({
-    baseURL: getBaseUrl(),
+    baseURL: API_BASE_URL,
     headers: {
         'Content-Type': 'application/json',
     },
