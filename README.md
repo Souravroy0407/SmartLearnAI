@@ -51,28 +51,38 @@
 ## 📂 Project Structure
 
 ```
-src/
-├── assets/         # Static assets
-├── components/     # Reusable UI components (Sidebar, Topbar, etc.)
-├── layouts/        # Layout wrappers (MainLayout)
-├── pages/          # Page components (Dashboard, ExamChecker, etc.)
-├── App.tsx         # Main application component & Routing
-├── main.tsx        # Entry point
-└── index.css       # Global styles & Tailwind imports
+├── frontend/           # React frontend application
+│   ├── src/
+│   ├── public/
+│   └── vite.config.ts
+├── backend/            # FastAPI backend application
+│   ├── api/
+│   ├── main.py
+│   ├── models.py
+│   └── requirements.txt
+└── README.md
 ```
 
-## 🎨 Design System
+## 📦 Installation & Setup
 
-The project uses a custom **Soft Blue / Indigo** theme configured in Tailwind CSS:
-- **Primary**: Indigo (`#4F46E5`)
-- **Secondary**: Slate (`#64748B`)
-- **Background**: White / Light Gray (`#F8FAFC`)
-- **Accents**: Success (Green), Warning (Amber), Error (Red)
+1.  **Clone the repository**
+    ```bash
+    git clone https://github.com/yourusername/smartlearn-ai.git
+    cd smartlearn-ai
+    ```
 
-## 🤝 Contributing
+2.  **Backend Setup**
+    ```bash
+    cd backend
+    pip install -r requirements.txt
+    uvicorn main:app --reload
+    ```
+    The backend will run at `http://localhost:8000`.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License.
+3.  **Frontend Setup**
+    ```bash
+    cd frontend
+    npm install
+    npm run dev
+    ```
+    The app will run at `http://localhost:5173`.

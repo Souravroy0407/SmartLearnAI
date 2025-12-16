@@ -8,9 +8,9 @@ import os
 import json
 import re
 
-from backend.database import get_db
-from backend.models import StudyTask, User
-from backend.auth import get_current_user
+from database import get_db
+from models import StudyTask, User
+from auth import get_current_user
 
 router = APIRouter()
 

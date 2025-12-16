@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
-from backend.database import get_db
-from backend.models import User
+from database import get_db
+from models import User
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from backend.auth import SECRET_KEY, ALGORITHM, create_access_token
+from auth import SECRET_KEY, ALGORITHM, create_access_token
 import io
 import time
 

@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from backend.database import get_db
-from backend.models import User
+from database import get_db
+from models import User
 
 router = APIRouter()
 
