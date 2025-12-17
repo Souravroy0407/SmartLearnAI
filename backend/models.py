@@ -42,8 +42,7 @@ class Question(Base):
     # options = relationship("Option", back_populates="question", cascade="all, delete-orphan")
 
 class Option(Base):
-    __tablename__ = "options"
-
+    __tablename__ = "quiz_options"
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, nullable=False, index=True)
     text = Column(String(255), nullable=False)
@@ -69,7 +68,7 @@ class StudentAnswer(Base):
     id = Column(Integer, primary_key=True, index=True)
     attempt_id = Column(Integer, ForeignKey("quiz_attempts.id"), nullable=False)
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
-    selected_option_id = Column(Integer, ForeignKey("options.id"), nullable=False)
+    selected_option_id = Column(Integer, ForeignKey("quiz_options.id"), nullable=False)
     is_correct = Column(Integer, default=0) # Using Integer as Boolean (0/1) for SQLite compatibility
 
     attempt = relationship("QuizAttempt", back_populates="student_answers")
