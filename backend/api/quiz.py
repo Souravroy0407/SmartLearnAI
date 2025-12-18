@@ -41,6 +41,7 @@ class QuizResponse(BaseModel):
     questions_count: int
     status: Optional[str] = "active"
     score: Optional[int] = None
+    attempted_count: Optional[int] = None
     warnings_count: Optional[int] = 0
 
 class SubmissionAnswer(BaseModel):
@@ -49,6 +50,7 @@ class SubmissionAnswer(BaseModel):
 
 class QuizSubmission(BaseModel):
     answers: List[SubmissionAnswer]
+    submission_type: Optional[str] = "manual"
 
 class GenerateQuizRequest(BaseModel):
     subject: str
@@ -57,6 +59,224 @@ class GenerateQuizRequest(BaseModel):
     count: int
 
 # --- Endpoints ---
+
+# ... (skip to list_quizzes)
+
+@router.get("/", response_model=List[QuizResponse])
+def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    quizzes = db.query(Quiz).all()
+    
+    # Optimize: Fetch all question counts in one query
+    question_counts = db.query(Question.quiz_id, func.count(Question.id)).group_by(Question.quiz_id).all()
+    counts_map = {quiz_id: count for quiz_id, count in question_counts}
+    
+    # Fetch attempts for the current user in one query
+    student_id = current_user.id
+    attempts = db.query(QuizAttempt).filter(QuizAttempt.student_id == student_id).all()
+    attempts_map = {att.quiz_id: att for att in attempts}
+
+    results = []
+    now = datetime.now()
+
+    for q in quizzes:
+        # Determine status
+        status = "active"
+        score = None
+        attempted_count = None
+        
+        attempt = attempts_map.get(q.id)
+        if attempt:
+            status = "attempted"
+            score = attempt.score
+            attempted_count = attempt.total_questions # Repurposed column for attempted count
+        elif q.deadline:
+            try:
+                deadline_dt = datetime.fromisoformat(q.deadline)
+                if now > deadline_dt:
+                    status = "expired"
+            except ValueError:
+                pass # Invalid date format fallback
+
+        results.append({
+            "id": q.id,
+            "title": q.title,
+            "description": q.description,
+            "duration_minutes": q.duration_minutes,
+            "created_at": q.created_at,
+            "deadline": q.deadline,
+            "questions_count": counts_map.get(q.id, 0),
+            "status": status,
+            "score": score,
+            "attempted_count": attempted_count
+        })
+    return results
+
+# ... (skip to submit_quiz)
+
+
+# ... (inside router)
+
+@router.post("/{quiz_id}/start")
+def start_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    student_id = current_user.id
+    
+    # Check if quiz exists
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    # Check for existing attempt
+    attempt = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id, QuizAttempt.student_id == student_id).first()
+    
+    if not attempt:
+        # Create new attempt with start time
+        now_str = datetime.now().isoformat()
+        attempt = QuizAttempt(
+            quiz_id=quiz_id,
+            student_id=student_id,
+            start_time=now_str,
+            status="started"
+        )
+        db.add(attempt)
+        db.commit()
+        db.refresh(attempt)
+    elif not attempt.start_time:
+        # Backfill start time if missing (e.g. re-entering started quiz)
+        attempt.start_time = datetime.now().isoformat()
+        db.commit()
+    
+    return {"message": "Quiz started", "attempt_id": attempt.id, "start_time": attempt.start_time}
+
+@router.post("/{quiz_id}/submit")
+def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    student_id = current_user.id
+    
+    # Find existing attempt or create if not exists (handling edge case)
+    attempt = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id, QuizAttempt.student_id == student_id).first()
+    
+    if attempt and attempt.status == "completed":
+         raise HTTPException(status_code=400, detail="Quiz already submitted")
+
+    # Check deadline
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if quiz and quiz.deadline:
+        deadline_dt = datetime.fromisoformat(quiz.deadline)
+        # Allow small buffer for latency
+        if datetime.now() > deadline_dt:
+             # But if it's auto-timeout from frontend, we might still accept it? 
+             # For now, strict deadline enforcement but maybe lenient for auto-submit if implemented
+             pass 
+
+    score = 0
+    attempted_count = len(submission.answers)
+    
+    submitted_option_ids = [answer.selected_option_id for answer in submission.answers]
+    
+    if submitted_option_ids:
+        fetched_options = db.query(Option).filter(Option.id.in_(submitted_option_ids)).all()
+        options_map = {opt.id: opt for opt in fetched_options}
+    else:
+        options_map = {}
+
+    for answer in submission.answers:
+        option = options_map.get(answer.selected_option_id)
+        if option and option.is_correct:
+            score += 1
+            
+    now_str = datetime.now().isoformat()
+    submission_type = getattr(submission, 'submission_type', 'manual') # Handle optional field safely
+
+    if not attempt:
+        # Fallback if start wasn't called (shouldn't happen in new flow)
+        attempt = QuizAttempt(
+            quiz_id=quiz_id,
+            student_id=student_id,
+            start_time=now_str, # Approximation
+            status="started"
+        )
+        db.add(attempt)
+    
+    attempt.score = score
+    attempt.total_questions = attempted_count
+    attempt.status = "completed"
+    attempt.timestamp = now_str
+    attempt.submission_type = submission_type
+    
+    db.commit()
+    db.refresh(attempt)
+
+    # Save Student Answers
+    # First clear existing answers for this attempt (retry logic)
+    db.query(StudentAnswer).filter(StudentAnswer.attempt_id == attempt.id).delete()
+    
+    for answer in submission.answers:
+        option = options_map.get(answer.selected_option_id)
+        is_correct = 1 if (option and option.is_correct) else 0
+        
+        student_ans = StudentAnswer(
+            attempt_id=attempt.id,
+            question_id=answer.question_id,
+            selected_option_id=answer.selected_option_id,
+            is_correct=is_correct
+        )
+        db.add(student_ans)
+    
+    db.commit()
+    
+    return {"message": "Quiz submitted successfully", "score": score, "total": attempted_count}
+
+# ... (AI Generation endpoint remains)
+
+@router.get("/{quiz_id}/analytics")
+def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Verify quiz exists
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    
+    attempts = db.query(QuizAttempt, User).join(User, QuizAttempt.student_id == User.id).filter(
+        QuizAttempt.quiz_id == quiz_id,
+        QuizAttempt.status == "completed" 
+    ).order_by(QuizAttempt.timestamp.desc()).all()
+    
+    results = []
+    for attempt, user in attempts:
+        # Double check for timestamp validity
+        if not attempt.timestamp or attempt.timestamp == "":
+            continue
+
+        time_taken_str = "—"
+        if attempt.start_time and attempt.timestamp:
+            try:
+                start = datetime.fromisoformat(attempt.start_time)
+                end = datetime.fromisoformat(attempt.timestamp)
+                duration = end - start
+                
+                total_seconds = int(duration.total_seconds())
+                minutes = total_seconds // 60
+                seconds = total_seconds % 60
+                
+                if minutes > 0:
+                    time_taken_str = f"{minutes}m {seconds}s"
+                else:
+                    time_taken_str = f"{seconds}s"
+            except ValueError:
+                pass
+
+        results.append({
+            "id": attempt.id,
+            "student_name": user.full_name,
+            "student_email": user.email,
+            "score": attempt.score,
+            "attempted_count": attempt.total_questions,
+            "submitted_at": attempt.timestamp,
+            "warnings_count": attempt.warnings_count,
+            "time_taken": time_taken_str, 
+            "submission_type": attempt.submission_type or "manual"
+        })
+        
+    return results
+# --- AI Generation ---
 
 @router.post("/generate-ai")
 def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(get_current_user)):
@@ -135,51 +355,7 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
     db.commit()
     return {"message": "Quiz created successfully", "quiz_id": new_quiz.id}
 
-@router.get("/", response_model=List[QuizResponse])
-def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    quizzes = db.query(Quiz).all()
-    
-    # Optimize: Fetch all question counts in one query
-    question_counts = db.query(Question.quiz_id, func.count(Question.id)).group_by(Question.quiz_id).all()
-    counts_map = {quiz_id: count for quiz_id, count in question_counts}
-    
-    # Fetch attempts for the current user in one query
-    student_id = current_user.id
-    attempts = db.query(QuizAttempt).filter(QuizAttempt.student_id == student_id).all()
-    attempts_map = {att.quiz_id: att for att in attempts}
 
-    results = []
-    now = datetime.now()
-
-    for q in quizzes:
-        # Determine status
-        status = "active"
-        score = None
-        
-        attempt = attempts_map.get(q.id)
-        if attempt:
-            status = "attempted"
-            score = attempt.score
-        elif q.deadline:
-            try:
-                deadline_dt = datetime.fromisoformat(q.deadline)
-                if now > deadline_dt:
-                    status = "expired"
-            except ValueError:
-                pass # Invalid date format fallback
-
-        results.append({
-            "id": q.id,
-            "title": q.title,
-            "description": q.description,
-            "duration_minutes": q.duration_minutes,
-            "created_at": q.created_at,
-            "deadline": q.deadline,
-            "questions_count": counts_map.get(q.id, 0),
-            "status": status,
-            "score": score
-        })
-    return results
 
 @router.get("/{quiz_id}")
 def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
@@ -234,13 +410,29 @@ def delete_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: User 
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
     
-    # Cascade delete implementation manually if not using cascade in models
-    questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
-    for q in questions:
-        db.query(Option).filter(Option.question_id == q.id).delete()
-    db.query(Question).filter(Question.quiz_id == quiz_id).delete()
-    db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id).delete()
+    # Manual cascade delete to handle Foreign Keys (StudentAnswer -> Option)
+    # 1. Delete Student Answers (dependent on QuizAttempt and Option)
+    attempts = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id).all()
+    attempt_ids = [a.id for a in attempts]
     
+    if attempt_ids:
+        # Use synchronize_session=False for efficient bulk delete without loading objects
+        db.query(StudentAnswer).filter(StudentAnswer.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
+        
+    # 2. Delete Quiz Attempts
+    db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id).delete(synchronize_session=False)
+
+    # 3. Delete Options (dependent on Question)
+    questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    question_ids = [q.id for q in questions]
+    
+    if question_ids:
+        db.query(Option).filter(Option.question_id.in_(question_ids)).delete(synchronize_session=False)
+    
+    # 4. Delete Questions
+    db.query(Question).filter(Question.quiz_id == quiz_id).delete(synchronize_session=False)
+    
+    # 5. Delete Quiz
     db.delete(quiz)
     db.commit()
     return {"message": "Quiz deleted successfully"}
@@ -262,72 +454,7 @@ def get_quiz_status(quiz_id: int, db: Session = Depends(get_db), current_user: U
             
     return {"status": "active"}
 
-@router.post("/{quiz_id}/submit")
-def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    student_id = current_user.id
-    
-    # Check if already attempted
-    existing_attempt = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id, QuizAttempt.student_id == student_id).first()
-    if existing_attempt:
-        raise HTTPException(status_code=400, detail="Quiz already attempted")
 
-    # Check deadline
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
-    if quiz and quiz.deadline:
-        deadline_dt = datetime.fromisoformat(quiz.deadline)
-        if datetime.now() > deadline_dt:
-             raise HTTPException(status_code=400, detail="Time limit exceeded: Quiz has expired")
-
-    score = 0
-    total_questions = len(submission.answers) # Update total based on submission length
-    
-    # Optimize: Fetch all selected options in one query
-    submitted_option_ids = [answer.selected_option_id for answer in submission.answers]
-    # Filter only existing and correct options to verify
-    # If an option is not found or not correct, it won't be in this list (if we filtered by is_correct=True)
-    # But to be safe and simple, let's fetch all submitted options and check in python
-    if submitted_option_ids:
-        fetched_options = db.query(Option).filter(Option.id.in_(submitted_option_ids)).all()
-        options_map = {opt.id: opt for opt in fetched_options}
-    else:
-        options_map = {}
-
-    # Calculate score
-    for answer in submission.answers:
-        # Check if option is correct
-        option = options_map.get(answer.selected_option_id)
-        if option and option.is_correct:
-            score += 1
-            
-    # Record attempt
-    new_attempt = QuizAttempt(
-        quiz_id=quiz_id,
-        student_id=student_id,
-        score=score,
-        total_questions=total_questions,
-        status="completed",
-        timestamp=datetime.now().isoformat()
-    )
-    db.add(new_attempt)
-    db.commit()
-    db.refresh(new_attempt)
-
-    # Save Student Answers
-    for answer in submission.answers:
-        option = options_map.get(answer.selected_option_id)
-        is_correct = 1 if (option and option.is_correct) else 0
-        
-        student_ans = StudentAnswer(
-            attempt_id=new_attempt.id,
-            question_id=answer.question_id,
-            selected_option_id=answer.selected_option_id,
-            is_correct=is_correct
-        )
-        db.add(student_ans)
-    
-    db.commit()
-    
-    return {"message": "Quiz submitted successfully", "score": score, "total": total_questions}
 
 @router.post("/attempt/{attempt_id}/warning")
 def record_warning(attempt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -383,17 +510,20 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
     
-    # Ideally check strict ownership: if quiz.teacher_id != current_user.id: ...
-    
-    attempts = db.query(QuizAttempt, User).join(User, QuizAttempt.student_id == User.id).filter(QuizAttempt.quiz_id == quiz_id).all()
+    attempts = db.query(QuizAttempt, User).join(User, QuizAttempt.student_id == User.id).filter(QuizAttempt.quiz_id == quiz_id).order_by(QuizAttempt.timestamp.desc()).all()
     
     results = []
     for attempt, user in attempts:
         results.append({
+            "id": attempt.id,
             "student_name": user.full_name,
+            "student_email": user.email,
             "score": attempt.score,
-            "total": attempt.total_questions,
-            "timestamp": attempt.timestamp
+            "attempted_count": attempt.total_questions,
+            "submitted_at": attempt.timestamp,
+            "warnings_count": attempt.warnings_count,
+            "time_taken": None, # Not tracking start time yet
+            "submission_type": "Manual" # Default logic
         })
         
     return results

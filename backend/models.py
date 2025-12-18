@@ -57,7 +57,9 @@ class QuizAttempt(Base):
     score = Column(Integer, default=0)
     total_questions = Column(Integer, default=0)
     status = Column(String(50), default="started") # started, completed
-    timestamp = Column(String(50))
+    timestamp = Column(String(50)) # This is effectively end_time
+    start_time = Column(String(50), nullable=True)
+    submission_type = Column(String(50), default="manual") # manual, auto_timeout
     warnings_count = Column(Integer, default=0)
 
     student_answers = relationship("StudentAnswer", back_populates="attempt", cascade="all, delete-orphan")

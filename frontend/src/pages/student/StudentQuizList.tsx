@@ -11,6 +11,7 @@ interface Quiz {
     questions_count: number;
     status: 'active' | 'attempted' | 'expired';
     score?: number;
+    attempted_count?: number;
     created_at: string;
     deadline?: string;
 }
@@ -71,6 +72,7 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
 const StudentQuizList = () => {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const navigate = useNavigate();
@@ -79,8 +81,10 @@ const StudentQuizList = () => {
         fetchQuizzes();
     }, []);
 
-    const fetchQuizzes = async () => {
-        setLoading(true);
+    const fetchQuizzes = async (bg = false) => {
+        if (!bg && quizzes.length === 0) setLoading(true);
+        else setIsRefreshing(true);
+
         try {
             const res = await axios.get('/api/quiz/');
             // Backend now filters and returns status/score directly!
@@ -103,6 +107,7 @@ const StudentQuizList = () => {
             console.error('Failed to fetch quizzes:', error);
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
     };
 
@@ -138,12 +143,12 @@ const StudentQuizList = () => {
                         />
                     </div>
                     <button
-                        onClick={fetchQuizzes}
-                        disabled={loading}
+                        onClick={() => fetchQuizzes(true)}
+                        disabled={loading || isRefreshing}
                         className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                         title="Refresh list"
                     >
-                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
@@ -175,7 +180,7 @@ const StudentQuizList = () => {
                                     </div>
                                     {quiz.status === 'attempted' && (
                                         <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-lg border border-green-200">
-                                            Score: {Math.round(((quiz.score || 0) / quiz.questions_count) * 100)}%
+                                            Score: {Math.round(((quiz.score || 0) / (quiz.attempted_count || quiz.questions_count)) * 100)}%
                                         </span>
                                     )}
                                 </div>

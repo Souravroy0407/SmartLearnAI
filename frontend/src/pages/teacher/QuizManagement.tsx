@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2, User } from 'lucide-react';
+
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
+import Toast, { type ToastType } from '../../components/Toast';
 
 interface Quiz {
     id: number;
@@ -75,6 +76,9 @@ interface AnalyticsModalProps {
 const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
     const [heatmap, setHeatmap] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [view, setView] = useState<'summary' | 'detailed'>('summary');
+    const [attempts, setAttempts] = useState<any[]>([]);
+    const [loadingAttempts, setLoadingAttempts] = useState(false);
 
     useEffect(() => {
         const fetchAnalytics = async () => {
@@ -90,26 +94,50 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
         fetchAnalytics();
     }, [quiz.id]);
 
+    const handleViewDetails = async () => {
+        setView('detailed');
+        if (attempts.length === 0) {
+            setLoadingAttempts(true);
+            try {
+                const res = await axios.get(`/api/quiz/${quiz.id}/analytics`);
+                setAttempts(res.data);
+            } catch (error) {
+                console.error("Failed to fetch student attempts", error);
+            } finally {
+                setLoadingAttempts(false);
+            }
+        }
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 z-[60]">
-            <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl p-8 relative max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl p-8 relative max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200 flex flex-col">
                 <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full transition-colors z-10">
                     <X className="w-6 h-6 text-gray-400" />
                 </button>
 
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3 flex-shrink-0">
                     <div className="p-2 bg-purple-100 text-purple-600 rounded-xl">
                         <BarChart2 className="w-6 h-6" />
                     </div>
-                    Quiz Analytics: <span className="text-primary">{quiz.title}</span>
+                    {view === 'summary' ? (
+                        <>Quiz Analytics: <span className="text-primary">{quiz.title}</span></>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setView('summary')} className="text-gray-400 hover:text-gray-600 transition-colors mr-2">
+                                <span className="text-sm font-medium">← Back</span>
+                            </button>
+                            Student Performance Details
+                        </div>
+                    )}
                 </h2>
 
                 {loading ? (
                     <div className="py-20 flex justify-center">
                         <div className="animate-spin w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full"></div>
                     </div>
-                ) : (
-                    <div className="space-y-8">
+                ) : view === 'summary' ? (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                         {/* Summary Cards */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-green-50 p-6 rounded-2xl border border-green-100">
@@ -118,12 +146,21 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
                                     {Math.round(heatmap.reduce((acc, q) => acc + q.accuracy, 0) / (heatmap.length || 1))}%
                                 </p>
                             </div>
-                            <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                                <p className="text-blue-600 font-medium mb-1">Total Attempts</p>
-                                <p className="text-3xl font-bold text-blue-700">
+                            <button
+                                onClick={handleViewDetails}
+                                className="group bg-blue-50 p-6 rounded-2xl border border-blue-100 text-left hover:shadow-lg hover:shadow-blue-100/50 hover:bg-blue-100/50 transition-all cursor-pointer relative overflow-hidden"
+                            >
+                                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">
+                                    <BarChart2 className="w-5 h-5" />
+                                </div>
+                                <p className="text-blue-600 font-medium mb-1 group-hover:text-blue-700 transition-colors flex items-center gap-2">
+                                    Total Attempts
+                                    <span className="text-xs bg-blue-200 text-blue-700 px-2 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">View Details</span>
+                                </p>
+                                <p className="text-3xl font-bold text-blue-700 group-hover:scale-105 origin-left transition-transform">
                                     {heatmap.length > 0 ? heatmap[0].total : 0}
                                 </p>
-                            </div>
+                            </button>
                         </div>
 
                         {/* Question Heatmap */}
@@ -165,6 +202,107 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
                             </div>
                         </div>
                     </div>
+                ) : (
+                    <div className="flex-1 overflow-auto animate-in fade-in slide-in-from-right-8 duration-300">
+                        {loadingAttempts ? (
+                            <div className="py-20 flex justify-center">
+                                <div className="animate-spin w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full"></div>
+                            </div>
+                        ) : attempts.length === 0 ? (
+                            <div className="text-center py-20 text-gray-400">
+                                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <User className="w-8 h-8 opacity-20" />
+                                </div>
+                                <p>No attempts recorded yet.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-hidden bg-white border border-gray-100 rounded-2xl">
+                                <table className="w-full">
+                                    <thead className="bg-gray-50/50 text-left">
+                                        <tr>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Student</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Score</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Details</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Submitted</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {attempts.map((attempt) => {
+                                            // Safety Check: Skip invalid rows
+                                            if (!attempt.submitted_at ||
+                                                attempt.submitted_at === '1970-01-01T00:00:00' ||
+                                                attempt.attempted_count === 0 && attempt.score === 0) {
+                                                return null;
+                                            }
+                                            return (
+                                                <tr key={attempt.id} className="hover:bg-gray-50/50 transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <p className="font-bold text-gray-800">{attempt.student_name}</p>
+                                                        <p className="text-xs text-gray-400">{attempt.student_email}</p>
+                                                        {attempt.warnings_count > 0 && (
+                                                            <div className="mt-1 flex items-center gap-1 text-xs text-orange-600 bg-orange-50 w-fit px-2 py-0.5 rounded-full border border-orange-100">
+                                                                <AlertTriangle className="w-3 h-3" />
+                                                                {attempt.warnings_count} Tab Switch{attempt.warnings_count > 1 ? 'es' : ''}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="relative w-10 h-10 flex items-center justify-center">
+                                                                <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                                                    <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
+                                                                    <path className={`${(attempt.score / (quiz.questions_count || 1)) >= 0.7 ? 'text-green-500' :
+                                                                        (attempt.score / (quiz.questions_count || 1)) >= 0.4 ? 'text-yellow-500' : 'text-red-500'
+                                                                        }`} strokeDasharray={`${(attempt.score / (quiz.questions_count || 1)) * 100}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" />
+                                                                </svg>
+                                                                <span className="absolute text-xs font-bold text-gray-700">
+                                                                    {Math.round((attempt.score / (quiz.questions_count || 1)) * 100)}%
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
+                                                        <div className="flex justify-between max-w-[140px]">
+                                                            <span className="text-xs uppercase tracking-wide text-gray-400">Correct:</span>
+                                                            <span className="font-bold text-green-600">{attempt.score}</span>
+                                                        </div>
+                                                        <div className="flex justify-between max-w-[140px]">
+                                                            <span className="text-xs uppercase tracking-wide text-gray-400">Attempted:</span>
+                                                            <span className="font-bold text-gray-700">{attempt.attempted_count}</span>
+                                                        </div>
+                                                        <div className="flex justify-between max-w-[140px]">
+                                                            <span className="text-xs uppercase tracking-wide text-gray-400">Type:</span>
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${attempt.submission_type === 'auto_timeout'
+                                                                ? 'bg-red-100 text-red-600 border border-red-200'
+                                                                : 'bg-blue-50 text-blue-600 border border-blue-100'
+                                                                }`}>
+                                                                {attempt.submission_type === 'auto_timeout' ? 'Auto-Submit' : 'Manual'}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <p className="font-medium text-gray-800 text-sm">
+                                                            {new Date(attempt.submitted_at).toLocaleDateString()}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400">
+                                                            {new Date(attempt.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                        {attempt.time_taken && attempt.time_taken !== '—' ? (
+                                                            <p className="text-xs text-gray-600 mt-1 flex items-center justify-end gap-1 font-medium bg-gray-100 px-2 py-0.5 rounded-lg w-fit ml-auto">
+                                                                <Clock className="w-3 h-3" /> {attempt.time_taken}
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-xs text-gray-300 mt-1">—</p>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 )}
             </div>
         </div>
@@ -176,21 +314,24 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
 const QuizManagement = () => {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [showCreator, setShowCreator] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [quizToDelete, setQuizToDelete] = useState<number | null>(null);
     const [selectedAnalyticsQuiz, setSelectedAnalyticsQuiz] = useState<Quiz | null>(null);
 
-    const [isDeleting, setIsDeleting] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     const isExpired = (deadline?: string) => {
         if (!deadline) return false;
         return new Date() > new Date(deadline);
     };
 
-    const fetchQuizzes = async () => {
-        setLoading(true);
+    const fetchQuizzes = async (bg = false) => {
+        if (!bg && quizzes.length === 0) setLoading(true);
+        else setIsRefreshing(true);
+
         try {
             const res = await axios.get('/api/quiz/');
             setQuizzes(res.data);
@@ -198,6 +339,7 @@ const QuizManagement = () => {
             console.error("Failed to fetch quizzes", error);
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
     };
 
@@ -212,17 +354,25 @@ const QuizManagement = () => {
 
     const confirmDelete = async () => {
         if (!quizToDelete) return;
-        setIsDeleting(true);
+
+        // Optimistic UI Update
+        const previousQuizzes = [...quizzes];
+        const idToDelete = quizToDelete; // Capture ID
+
+        // Immediately update UI
+        setQuizzes(quizzes.filter(q => q.id !== idToDelete));
+        setShowDeleteModal(false);
+        setQuizToDelete(null);
+
         try {
-            await axios.delete(`/api/quiz/${quizToDelete}`);
-            setQuizzes(quizzes.filter(q => q.id !== quizToDelete));
-            setShowDeleteModal(false);
-            setQuizToDelete(null);
+            await axios.delete(`/api/quiz/${idToDelete}`);
+            // Success
+            setToast({ message: "Quiz deleted successfully", type: "success" });
         } catch (error) {
             console.error("Failed to delete quiz", error);
-            alert("Failed to delete quiz");
-        } finally {
-            setIsDeleting(false);
+            // Revert on failure
+            setQuizzes(previousQuizzes);
+            setToast({ message: "Failed to delete quiz. Please try again", type: "error" });
         }
     };
 
@@ -256,12 +406,12 @@ const QuizManagement = () => {
                         />
                     </div>
                     <button
-                        onClick={fetchQuizzes}
-                        disabled={loading}
+                        onClick={() => fetchQuizzes(true)}
+                        disabled={loading || isRefreshing}
                         className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                         title="Refresh list"
                     >
-                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
@@ -364,10 +514,9 @@ const QuizManagement = () => {
                             </button>
                             <button
                                 onClick={confirmDelete}
-                                disabled={isDeleting}
                                 className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/25"
                             >
-                                {isDeleting ? 'Deleting...' : 'Delete'}
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -392,6 +541,14 @@ const QuizManagement = () => {
             )}
 
             {showCreator && <QuizCreator onClose={() => setShowCreator(false)} onSuccess={fetchQuizzes} />}
+
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
         </div >
     );
 };
