@@ -37,6 +37,7 @@ app.include_router(users.router)
 
 # Configure CORS to allow requests from the React frontend
 origins = [
+    "http://localhost:5173",
     "https://localhost:5173",
     "https://192.168.1.101:5173",
     "https://smartlearnai-frontend.netlify.app",

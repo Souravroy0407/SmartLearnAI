@@ -17,6 +17,17 @@ class User(Base):
     # From remote
     energy_preference = Column(String(50), nullable=True)
     study_tasks = relationship("StudyTask", back_populates="user")
+    exams = relationship("Exam", back_populates="user")
+
+class Exam(Base):
+    __tablename__ = "exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String(255))
+    date = Column(DateTime)
+    
+    user = relationship("User", back_populates="exams")
 
 class Quiz(Base):
     __tablename__ = "quizzes"
