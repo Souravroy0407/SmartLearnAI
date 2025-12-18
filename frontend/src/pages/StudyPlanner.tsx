@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2 } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, AlertTriangle, X, Calendar, Edit3 } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
@@ -28,6 +28,9 @@ const StudyPlanner = () => {
     const [weekDays, setWeekDays] = useState<{ day: string; date: number; fullDate: Date; active: boolean }[]>([]);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+    const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
+    const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
+    const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
 
     // Generate week days based on selected date (or current date)
     useEffect(() => {
@@ -134,6 +137,49 @@ const StudyPlanner = () => {
             fetchTasks(); // Revert on error
         }
     };
+
+    const handleDeleteTask = async () => {
+        if (!taskToDelete) return;
+
+        try {
+            // Optimistic update
+            setTasks(prev => prev.filter(t => t.id !== taskToDelete.id));
+            setTaskToDelete(null); // Close modal immediately
+
+            await api.delete(`/api/study-planner/tasks/${taskToDelete.id}`);
+        } catch (error) {
+            console.error("Error deleting task:", error);
+            // Revert or show error
+            fetchTasks();
+        }
+    };
+
+    const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
+        if (!taskToReschedule) return;
+
+        try {
+            // Optimistic update
+            setTasks(prev => prev.map(t =>
+                t.id === taskToReschedule.id ? { ...t, ...updatedTaskPart } : t
+            ));
+
+            // Build API payload
+            // Note: API expects snake_case but our internal interface is also snake_case for props, so clean mapping
+            await api.put(`/api/study-planner/tasks/${taskToReschedule.id}`, updatedTaskPart);
+
+            setTaskToReschedule(null);
+        } catch (error) {
+            console.error("Error updating task:", error);
+            fetchTasks();
+        }
+    };
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = () => setActiveMenuTaskId(null);
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
 
     const formatTime = (isoString: string) => {
         return new Date(isoString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -290,9 +336,45 @@ const StudyPlanner = () => {
                                             <CheckCircle2 className="w-5 h-5" />
                                         </button>
 
-                                        <button className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
-                                            <MoreVertical className="w-5 h-5" />
-                                        </button>
+                                        <div className="relative">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveMenuTaskId(activeMenuTaskId === task.id ? null : task.id);
+                                                }}
+                                                className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                <MoreVertical className="w-5 h-5" />
+                                            </button>
+
+                                            {activeMenuTaskId === task.id && (
+                                                <div
+                                                    className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-secondary-light/20 overflow-hidden z-10"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <button
+                                                        onClick={() => {
+                                                            setTaskToReschedule(task);
+                                                            setActiveMenuTaskId(null);
+                                                        }}
+                                                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                        Reschedule Manually
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setTaskToDelete(task);
+                                                            setActiveMenuTaskId(null);
+                                                        }}
+                                                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                        Delete Task
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </motion.div>
                                 ))}
                             </div>
@@ -388,6 +470,186 @@ const StudyPlanner = () => {
                     </motion.div>
                 </div>
             )}
+
+            {/* Delete Confirmation Modal */}
+            {taskToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                    >
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                    <Trash2 className="w-6 h-6" />
+                                </div>
+                                <button
+                                    onClick={() => setTaskToDelete(null)}
+                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
+                            <p className="text-secondary mb-6">
+                                Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
+                                This action cannot be undone.
+                            </p>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setTaskToDelete(null)}
+                                    className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeleteTask}
+                                    className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                >
+                                    Delete Task
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+            {/* Reschedule Modal */}
+            {taskToReschedule && (
+                <RescheduleModal
+                    task={taskToReschedule}
+                    onClose={() => setTaskToReschedule(null)}
+                    onSave={handleRescheduleSave}
+                />
+            )}
+        </div>
+    );
+};
+
+// Inline Reschedule Modal Component
+const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: () => void, onSave: (data: any) => void }) => {
+    // Initialize state with task values
+    // Date handling: existing start_time is ISO string. 
+    const taskDate = new Date(task.start_time);
+
+    // Format date for input type="date" (YYYY-MM-DD)
+    const [date, setDate] = useState(taskDate.toISOString().split('T')[0]);
+
+    // Format time for input type="time" (HH:MM)
+    const [time, setTime] = useState(taskDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+
+    const [duration, setDuration] = useState(task.duration_minutes);
+    const [priorityColor, setPriorityColor] = useState(task.color);
+
+    const handleSubmit = () => {
+        // Construct new start_time ISO string
+        const newDateTime = new Date(`${date}T${time}:00`);
+
+        onSave({
+            start_time: newDateTime.toISOString(),
+            duration_minutes: Number(duration),
+            color: priorityColor
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden"
+            >
+                <div className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-bold text-secondary-dark">Reschedule Task</h3>
+                        <button onClick={onClose} className="p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                            <X className="w-5 h-5 text-secondary" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {/* Date Input */}
+                        <div>
+                            <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Date</label>
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                <input
+                                    type="date"
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-3 bg-secondary-light/5 border border-secondary-light/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-secondary-dark font-medium"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Time & Duration Row */}
+                        <div className="flex gap-4">
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Start Time</label>
+                                <div className="relative">
+                                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                    <input
+                                        type="time"
+                                        value={time}
+                                        onChange={(e) => setTime(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 bg-secondary-light/5 border border-secondary-light/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-secondary-dark font-medium"
+                                    />
+                                </div>
+                            </div>
+                            <div className="w-1/3">
+                                <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Mins</label>
+                                <input
+                                    type="number"
+                                    value={duration}
+                                    onChange={(e) => setDuration(Number(e.target.value))}
+                                    className="w-full px-4 py-3 bg-secondary-light/5 border border-secondary-light/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-secondary-dark font-medium text-center"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Priority Selection */}
+                        <div>
+                            <label className="block text-xs font-bold text-secondary-light mb-2 uppercase tracking-wider">Priority</label>
+                            <div className="flex gap-2">
+                                {[
+                                    { label: 'Low', value: 'bg-success', color: 'text-success bg-success/10 border-success/20' },
+                                    { label: 'Medium', value: 'bg-primary', color: 'text-primary bg-primary/10 border-primary/20' },
+                                    { label: 'High', value: 'bg-warning', color: 'text-warning bg-warning/10 border-warning/20' }
+                                ].map((p) => (
+                                    <button
+                                        key={p.value}
+                                        onClick={() => setPriorityColor(p.value)}
+                                        className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-all ${priorityColor === p.value
+                                            ? p.color + ' ring-2 ring-offset-2 ring-offset-white ring-' + p.value.split('-')[1]
+                                            : 'bg-white border-secondary-light/10 text-secondary hover:bg-secondary-light/5'
+                                            }`}
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 mt-8">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSubmit}
+                            className="flex-1 px-4 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-primary/25"
+                        >
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
         </div>
     );
 };
