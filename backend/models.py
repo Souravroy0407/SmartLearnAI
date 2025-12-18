@@ -61,6 +61,7 @@ class QuizAttempt(Base):
     start_time = Column(String(50), nullable=True)
     submission_type = Column(String(50), default="manual") # manual, auto_timeout
     warnings_count = Column(Integer, default=0)
+    tab_switch_count = Column(Integer, nullable=True)
 
     student_answers = relationship("StudentAnswer", back_populates="attempt", cascade="all, delete-orphan")
 

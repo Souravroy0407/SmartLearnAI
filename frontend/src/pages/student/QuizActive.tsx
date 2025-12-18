@@ -30,6 +30,7 @@ const QuizActive = () => {
 
     // Fix: Use ref to track current answers so timer interval can access them without stale closure
     const answersRef = useRef(answers);
+    const tabSwitchCountRef = useRef(0);
 
     useEffect(() => {
         answersRef.current = answers;
@@ -82,12 +83,14 @@ const QuizActive = () => {
 
     // Proctoring Logic: Detect Tab Switch
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (document.hidden && quiz?.id) {
-                // Ideally send backend warning here
-                // Record warning
+        // STRICT RULE: Only track when quiz is fully loaded and NOT submitting
+        if (loading || submitting || !quiz) return;
 
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                tabSwitchCountRef.current += 1;
 
+                // Optional: Show warning (but logic is now strictly counting)
                 setMessageModal({
                     show: true,
                     message: "⚠️ WARNING: Tab switching is monitored! Focusing away from the quiz may lead to disqualification.",
@@ -100,7 +103,7 @@ const QuizActive = () => {
         return () => {
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
-    }, [quiz]);
+    }, [loading, submitting, quiz]);
 
     // Format Time
     const formatTime = (seconds: number) => {
@@ -142,7 +145,8 @@ const QuizActive = () => {
             // Send payload matching QuizSubmission schema: { answers: [...] }
             await axios.post(`/api/quiz/${id}/submit`, {
                 answers: formattedAnswers,
-                submission_type: auto ? 'auto_timeout' : 'manual'
+                submission_type: auto ? 'auto_timeout' : 'manual',
+                tab_switch_count: tabSwitchCountRef.current
             });
 
             navigate('/dashboard/student-quizzes');

@@ -239,12 +239,29 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
                                                     <td className="px-6 py-4">
                                                         <p className="font-bold text-gray-800">{attempt.student_name}</p>
                                                         <p className="text-xs text-gray-400">{attempt.student_email}</p>
-                                                        {attempt.warnings_count > 0 && (
-                                                            <div className="mt-1 flex items-center gap-1 text-xs text-orange-600 bg-orange-50 w-fit px-2 py-0.5 rounded-full border border-orange-100">
-                                                                <AlertTriangle className="w-3 h-3" />
-                                                                {attempt.warnings_count} Tab Switch{attempt.warnings_count > 1 ? 'es' : ''}
-                                                            </div>
-                                                        )}
+                                                        {(() => {
+                                                            const count = attempt.tab_switch_count;
+                                                            if (count === null || count === undefined) {
+                                                                return (
+                                                                    <div className="mt-1 flex items-center gap-1 text-xs text-gray-400 bg-gray-50 w-fit px-2 py-0.5 rounded-full border border-gray-100" title="Not tracked">
+                                                                        <span className="font-medium">Tabs: —</span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            if (count === 0) {
+                                                                return (
+                                                                    <div className="mt-1 flex items-center gap-1 text-xs text-green-600 bg-green-50 w-fit px-2 py-0.5 rounded-full border border-green-100">
+                                                                        <span className="font-medium">Tabs: 0</span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <div className="mt-1 flex items-center gap-1 text-xs text-orange-600 bg-orange-50 w-fit px-2 py-0.5 rounded-full border border-orange-100">
+                                                                    <AlertTriangle className="w-3 h-3" />
+                                                                    {count} Tab Switch{count > 1 ? 'es' : ''}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">

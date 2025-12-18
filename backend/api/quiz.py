@@ -51,6 +51,7 @@ class SubmissionAnswer(BaseModel):
 class QuizSubmission(BaseModel):
     answers: List[SubmissionAnswer]
     submission_type: Optional[str] = "manual"
+    tab_switch_count: Optional[int] = None
 
 class GenerateQuizRequest(BaseModel):
     subject: str
@@ -184,7 +185,9 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
             score += 1
             
     now_str = datetime.now().isoformat()
+    now_str = datetime.now().isoformat()
     submission_type = getattr(submission, 'submission_type', 'manual') # Handle optional field safely
+    tab_switch_count = getattr(submission, 'tab_switch_count', None)
 
     if not attempt:
         # Fallback if start wasn't called (shouldn't happen in new flow)
@@ -199,8 +202,10 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
     attempt.score = score
     attempt.total_questions = attempted_count
     attempt.status = "completed"
+    attempt.status = "completed"
     attempt.timestamp = now_str
     attempt.submission_type = submission_type
+    attempt.tab_switch_count = tab_switch_count
     
     db.commit()
     db.refresh(attempt)
@@ -271,6 +276,8 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
             "attempted_count": attempt.total_questions,
             "submitted_at": attempt.timestamp,
             "warnings_count": attempt.warnings_count,
+            "warnings_count": attempt.warnings_count,
+            "tab_switch_count": attempt.tab_switch_count,
             "time_taken": time_taken_str, 
             "submission_type": attempt.submission_type or "manual"
         })
@@ -503,27 +510,4 @@ def get_quiz_heatmap(quiz_id: int, db: Session = Depends(get_db), current_user: 
         
     return results
 
-@router.get("/{quiz_id}/analytics")
-def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Verify quiz exists and user is owner (or admin)
-    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    attempts = db.query(QuizAttempt, User).join(User, QuizAttempt.student_id == User.id).filter(QuizAttempt.quiz_id == quiz_id).order_by(QuizAttempt.timestamp.desc()).all()
-    
-    results = []
-    for attempt, user in attempts:
-        results.append({
-            "id": attempt.id,
-            "student_name": user.full_name,
-            "student_email": user.email,
-            "score": attempt.score,
-            "attempted_count": attempt.total_questions,
-            "submitted_at": attempt.timestamp,
-            "warnings_count": attempt.warnings_count,
-            "time_taken": None, # Not tracking start time yet
-            "submission_type": "Manual" # Default logic
-        })
-        
-    return results
+
