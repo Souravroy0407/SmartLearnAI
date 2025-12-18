@@ -1,14 +1,40 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, Brain, Sparkles, Users, Rocket, CheckCircle } from 'lucide-react';
+import { ArrowRight, BookOpen, Brain, Sparkles, Users, Rocket, CheckCircle, X, Construction } from 'lucide-react';
 import heroImg from '../assets/hero-illustration.png';
 
 const LandingPage = () => {
+    const [isBannerVisible, setIsBannerVisible] = useState(true);
+
     return (
         <div className="min-h-screen bg-white font-sans overflow-hidden">
+            {/* Under Construction Banner */}
+            <AnimatePresence>
+                {isBannerVisible && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -50 }}
+                        className="fixed top-0 left-0 w-full z-[60] bg-gradient-to-r from-orange-500 via-pink-500 to-purple-600 text-white py-2 px-4 shadow-md"
+                    >
+                        <div className="max-w-7xl mx-auto flex items-center justify-between text-xs md:text-sm font-medium">
+                            <div className="flex items-center gap-2 mx-auto">
+                                <Construction size={16} className="animate-pulse" />
+                                <span>🚀 Website Under Active Development. Some features may be unstable.</span>
+                            </div>
+                            <button
+                                onClick={() => setIsBannerVisible(false)}
+                                className="absolute right-4 p-1 hover:bg-white/20 rounded-full transition-colors"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             {/* Navbar */}
-            <nav className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-6xl">
+            <nav className={`fixed left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-6xl transition-all duration-300 ${isBannerVisible ? 'top-16' : 'top-4'}`}>
                 <div className="bg-white/80 backdrop-blur-md rounded-full shadow-lg border border-white/20 px-6 py-3 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                         <div className="bg-gradient-to-br from-orange-400 to-pink-500 p-2 rounded-xl text-white">
