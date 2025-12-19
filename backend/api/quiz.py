@@ -29,6 +29,8 @@ class QuizCreate(BaseModel):
     description: str
     duration_minutes: int
     deadline: Optional[str] = None
+    difficulty: str
+    topic: str
     questions: List[QuestionCreate]
 
 class QuizResponse(BaseModel):
@@ -36,8 +38,11 @@ class QuizResponse(BaseModel):
     title: str
     description: str
     duration_minutes: int
+    duration_minutes: int
     created_at: Optional[str] = None
     deadline: Optional[str] = None
+    difficulty: Optional[str] = "Medium"
+    topic: Optional[str] = "General"
     questions_count: int
     status: Optional[str] = "active"
     score: Optional[int] = None
@@ -105,6 +110,8 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "duration_minutes": q.duration_minutes,
             "created_at": q.created_at,
             "deadline": q.deadline,
+            "difficulty": q.difficulty,
+            "topic": q.topic,
             "questions_count": counts_map.get(q.id, 0),
             "status": status,
             "score": score,
@@ -295,24 +302,28 @@ def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(
     model = genai.GenerativeModel('gemini-flash-latest')
 
     prompt = f"""
-    Generate {request.count} multiple-choice questions for a quiz.
-    
+    Generate a quiz for the following parameters:
     Subject: {request.subject}
     Topic: {request.topic}
     Difficulty: {request.difficulty}
+    Number of Questions: {request.count}
     
     Provide the response strictly in valid JSON format with the following structure:
-    [
-        {{
-            "text": "Question text here?",
-            "options": [
-                {{"text": "Option A", "is_correct": false}},
-                {{"text": "Option B", "is_correct": true}},
-                {{"text": "Option C", "is_correct": false}},
-                {{"text": "Option D", "is_correct": false}}
-            ]
-        }}
-    ]
+    {{
+        "title": "A creative, short, professional title (e.g., 'Routing Protocols Fundamentals' instead of 'Routing Quiz')",
+        "description": "A brief, professional description of what the quiz covers (1-2 sentences).",
+        "questions": [
+            {{
+                "text": "Question text here?",
+                "options": [
+                    {{"text": "Option A", "is_correct": false}},
+                    {{"text": "Option B", "is_correct": true}},
+                    {{"text": "Option C", "is_correct": false}},
+                    {{"text": "Option D", "is_correct": false}}
+                ]
+            }}
+        ]
+    }}
     Ensure there are exactly 4 options per question and exactly one correct answer.
     No markdown code blocks, just raw JSON.
     """
@@ -325,8 +336,8 @@ def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```", "", text)
         
-        questions_data = json.loads(text)
-        return questions_data
+        quiz_data = json.loads(text)
+        return quiz_data
         
     except Exception as e:
         print(f"AI Generation Error: {e}")
@@ -343,7 +354,9 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
         duration_minutes=quiz_data.duration_minutes,
         teacher_id=teacher_id,
         created_at=datetime.now().isoformat(),
-        deadline=quiz_data.deadline
+        deadline=quiz_data.deadline,
+        difficulty=quiz_data.difficulty,
+        topic=quiz_data.topic
     )
     db.add(new_quiz)
     db.commit()
@@ -511,3 +524,100 @@ def get_quiz_heatmap(quiz_id: int, db: Session = Depends(get_db), current_user: 
     return results
 
 
+
+@router.get("/{quiz_id}/result", response_model=dict)
+def get_student_quiz_result(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    student_id = current_user.id
+    
+    # Fetch Attempt
+    attempt = db.query(QuizAttempt).filter(
+        QuizAttempt.quiz_id == quiz_id,
+        QuizAttempt.student_id == student_id,
+        QuizAttempt.status == "completed"
+    ).first()
+    
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Quiz not attempted or not completed")
+    
+    # Fetch Quiz Details
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    
+    # Fetch Questions and Options
+    questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    question_ids = [q.id for q in questions]
+    
+    options = db.query(Option).filter(Option.question_id.in_(question_ids)).all()
+    options_map = {opt.id: opt for opt in options}
+    
+    # Fetch Student Answers
+    student_answers = db.query(StudentAnswer).filter(StudentAnswer.attempt_id == attempt.id).all()
+    student_answers_map = {sa.question_id: sa for sa in student_answers}
+    
+    # Construct Detailed Review
+    questions_review = []
+    correct_count = 0
+    wrong_count = 0
+    
+    for q in questions:
+        student_ans = student_answers_map.get(q.id)
+        selected_option_id = student_ans.selected_option_id if student_ans else None
+        
+        # Find correct option for this question
+        correct_option = next((opt for opt in options if opt.question_id == q.id and opt.is_correct), None)
+        
+        is_correct = False
+        if selected_option_id:
+             selected_opt = options_map.get(selected_option_id)
+             if selected_opt and selected_opt.is_correct:
+                 is_correct = True
+        
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+            
+        questions_review.append({
+            "id": q.id,
+            "text": q.text,
+            "options": [
+                {
+                    "id": opt.id,
+                    "text": opt.text,
+                    "is_correct": opt.is_correct # Reveal correct answer
+                } for opt in options if opt.question_id == q.id
+            ],
+            "selected_option_id": selected_option_id,
+            "correct_option_id": correct_option.id if correct_option else None,
+            "is_correct": is_correct
+        })
+
+    # Time Calculation
+    time_taken_str = "—"
+    if attempt.start_time and attempt.timestamp:
+        try:
+            start = datetime.fromisoformat(attempt.start_time)
+            end = datetime.fromisoformat(attempt.timestamp)
+            duration = end - start
+            total_seconds = int(duration.total_seconds())
+            
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            if minutes > 0:
+                time_taken_str = f"{minutes}m {seconds}s"
+            else:
+                time_taken_str = f"{seconds}s"
+        except:
+            pass
+
+    return {
+        "quiz_title": quiz.title,
+        "score": attempt.score,
+        "total_questions": attempt.total_questions,
+        "percentage": round((attempt.score / attempt.total_questions * 100)) if attempt.total_questions > 0 else 0,
+        "correct_count": correct_count,
+        "wrong_count": wrong_count,
+        "time_taken": time_taken_str,
+        "tab_switch_count": attempt.tab_switch_count or 0,
+        "submission_type": attempt.submission_type,
+        "questions": questions_review
+    }
