@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BrainCircuit, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { BrainCircuit, Mail, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
+import PasswordInput from '../../components/common/PasswordInput';
 
 const LoginPage = () => {
     const navigate = useNavigate();
@@ -90,20 +91,11 @@ const LoginPage = () => {
                             </div>
                         </div>
 
-                        <div className="space-y-1">
-                            <label className="text-xs font-semibold text-secondary-dark uppercase tracking-wide ml-1">Password</label>
-                            <div className="relative">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-3 bg-background border border-secondary-light/20 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none text-secondary-dark"
-                                    placeholder="••••••••"
-                                    required
-                                />
-                            </div>
-                        </div>
+                        <PasswordInput
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                        // label="Password" (default)
+                        />
 
                         <div className="flex items-center justify-end">
                             <Link to="#" className="text-xs font-medium text-primary hover:text-primary-dark transition-colors">Forgot Password?</Link>
