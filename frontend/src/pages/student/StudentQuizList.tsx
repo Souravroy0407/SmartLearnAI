@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, RefreshCw } from 'lucide-react';
+import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, RefreshCw, BarChart2 } from 'lucide-react';
 import axios from '../../api/axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,8 +11,11 @@ interface Quiz {
     questions_count: number;
     status: 'active' | 'attempted' | 'expired';
     score?: number;
+    attempted_count?: number;
     created_at: string;
     deadline?: string;
+    difficulty: string;
+    topic: string;
 }
 
 interface QuizDetailsModalProps {
@@ -59,8 +62,16 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                     </div>
 
                     <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-sm text-gray-600 leading-relaxed">
-                        <h4 className="font-bold text-gray-800 mb-1 text-xs uppercase tracking-wider">Description</h4>
                         {quiz.description || "No description provided."}
+                    </div>
+
+                    <div className="flex gap-2">
+                        <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold uppercase rounded-lg">
+                            {quiz.difficulty || "Medium"}
+                        </span>
+                        <span className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-bold uppercase rounded-lg">
+                            {quiz.topic || "General"}
+                        </span>
                     </div>
                 </div>
             </div>
@@ -71,16 +82,24 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
 const StudentQuizList = () => {
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const navigate = useNavigate();
+
+    // Progress Stats
+    const totalQuizzes = quizzes.length;
+    const completedQuizzes = quizzes.filter(q => q.status === 'attempted').length;
+    const progressPercentage = totalQuizzes > 0 ? (completedQuizzes / totalQuizzes) * 100 : 0;
 
     useEffect(() => {
         fetchQuizzes();
     }, []);
 
-    const fetchQuizzes = async () => {
-        setLoading(true);
+    const fetchQuizzes = async (bg = false) => {
+        if (!bg && quizzes.length === 0) setLoading(true);
+        else setIsRefreshing(true);
+
         try {
             const res = await axios.get('/api/quiz/');
             // Backend now filters and returns status/score directly!
@@ -103,11 +122,16 @@ const StudentQuizList = () => {
             console.error('Failed to fetch quizzes:', error);
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
     };
 
     const handleStartQuiz = (quizId: number) => {
         navigate(`/student/quiz/${quizId}`);
+    };
+
+    const handleViewResult = (quizId: number) => {
+        navigate(`/dashboard/student-quiz-result/${quizId}`);
     };
 
     const filteredQuizzes = quizzes.filter(quiz =>
@@ -121,6 +145,22 @@ const StudentQuizList = () => {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">Available Quizzes</h1>
                     <p className="text-gray-500 text-lg">Test your knowledge with these assessments.</p>
+                </div>
+
+                {/* Progress Summary Card */}
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm min-w-[280px]">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-gray-700">Your Progress</span>
+                        <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-lg">
+                            {completedQuizzes} / {totalQuizzes} Completed
+                        </span>
+                    </div>
+                    <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full transition-all duration-1000 ease-out"
+                            style={{ width: `${progressPercentage}%` }}
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -138,12 +178,12 @@ const StudentQuizList = () => {
                         />
                     </div>
                     <button
-                        onClick={fetchQuizzes}
-                        disabled={loading}
+                        onClick={() => fetchQuizzes(true)}
+                        disabled={loading || isRefreshing}
                         className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                         title="Refresh list"
                     >
-                        <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
@@ -165,22 +205,37 @@ const StudentQuizList = () => {
                         filteredQuizzes.map((quiz) => (
                             <div key={quiz.id} className="group bg-white border border-gray-100 rounded-3xl p-6 hover:shadow-xl hover:shadow-gray-200/50 hover:border-primary/20 transition-all duration-300 relative flex flex-col">
                                 <div className="flex justify-between items-start mb-6">
-                                    <div className={`p-3.5 rounded-2xl transition-transform duration-300 group-hover:scale-110 ${quiz.status === 'attempted' ? 'bg-green-100 text-green-600' :
-                                        quiz.status === 'expired' ? 'bg-red-100 text-red-600' :
-                                            'bg-gradient-to-br from-primary/10 to-primary/5 text-primary'
-                                        }`}>
-                                        {quiz.status === 'attempted' ? <CheckCircle className="w-6 h-6" /> :
-                                            quiz.status === 'expired' ? <AlertTriangle className="w-6 h-6" /> :
-                                                <FileText className="w-6 h-6" />}
+                                    <div className={`
+                                        flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider
+                                        ${quiz.status === 'attempted' ? 'bg-green-100 text-green-700' :
+                                            quiz.status === 'expired' ? 'bg-red-100 text-red-700' :
+                                                'bg-blue-50 text-blue-700'}
+                                    `}>
+                                        {quiz.status === 'attempted' ? <CheckCircle className="w-4 h-4" /> :
+                                            quiz.status === 'expired' ? <AlertTriangle className="w-4 h-4" /> :
+                                                <Play className="w-4 h-4 fill-current" />}
+                                        {quiz.status === 'attempted' ? 'Completed' : quiz.status === 'expired' ? 'Expired' : 'Active'}
                                     </div>
-                                    {quiz.status === 'attempted' && (
-                                        <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-lg border border-green-200">
-                                            Score: {Math.round(((quiz.score || 0) / quiz.questions_count) * 100)}%
-                                        </span>
-                                    )}
+
+                                    {/* Difficulty Tag */}
+                                    <span className={`
+                                        px-2.5 py-1 rounded-lg text-xs font-bold border
+                                        ${quiz.difficulty === 'Hard' ? 'bg-red-50 text-red-600 border-red-100' :
+                                            quiz.difficulty === 'Easy' ? 'bg-green-50 text-green-600 border-green-100' :
+                                                'bg-orange-50 text-orange-600 border-orange-100'}
+                                    `}>
+                                        {quiz.difficulty || 'Medium'}
+                                    </span>
                                 </div>
 
                                 <h3 className="text-lg font-bold text-gray-800 mb-2 line-clamp-1 group-hover:text-primary transition-colors">{quiz.title}</h3>
+
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    <span className="text-xs font-medium px-2 py-0.5 bg-gray-50 text-gray-500 rounded border border-gray-100">
+                                        {quiz.topic || "General"}
+                                    </span>
+                                </div>
+
                                 <p className="text-gray-500 text-sm mb-6 line-clamp-2 h-10">{quiz.description}</p>
 
                                 <div className="flex items-center gap-4 text-sm text-gray-500 mb-6 mt-auto">
@@ -203,17 +258,22 @@ const StudentQuizList = () => {
                                         <Info className="w-5 h-5" />
                                     </button>
                                     <button
-                                        onClick={() => handleStartQuiz(quiz.id)}
-                                        disabled={quiz.status === 'attempted' || quiz.status === 'expired'}
-                                        className={`py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:-translate-y-0.5 active:translate-y-0 ${quiz.status === 'attempted' || quiz.status === 'expired'
-                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
-                                            : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
+                                        onClick={() => {
+                                            if (quiz.status === 'attempted') handleViewResult(quiz.id);
+                                            else handleStartQuiz(quiz.id);
+                                        }}
+                                        disabled={quiz.status === 'expired'}
+                                        className={`py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:-translate-y-0.5 active:translate-y-0 ${quiz.status === 'attempted'
+                                            ? 'bg-green-600 text-white shadow-green-200 hover:shadow-green-300 hover:bg-green-700'
+                                            : quiz.status === 'expired'
+                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
+                                                : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
                                             }`}
                                     >
                                         {quiz.status === 'attempted' ? (
                                             <>
-                                                <CheckCircle className="w-5 h-5" />
-                                                Completed
+                                                <BarChart2 className="w-5 h-5" />
+                                                View Result
                                             </>
                                         ) : quiz.status === 'expired' ? (
                                             <>

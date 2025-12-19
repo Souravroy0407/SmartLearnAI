@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { Clock, AlertTriangle } from 'lucide-react';
@@ -17,23 +17,24 @@ interface Quiz {
     questions: Question[];
 }
 
-interface QuizAttempt {
-    id: number;
-}
-
 const QuizActive = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
     const [answers, setAnswers] = useState<Record<number, number>>({});
-    const [attemptId, setAttemptId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [messageModal, setMessageModal] = useState<{ show: boolean; message: string; type: 'error' | 'warning' | 'info' }>({ show: false, message: '', type: 'info' });
 
+    // Fix: Use ref to track current answers so timer interval can access them without stale closure
+    const answersRef = useRef(answers);
+    const tabSwitchCountRef = useRef(0);
 
-
+    useEffect(() => {
+        answersRef.current = answers;
+    }, [answers]);
 
     // Fetch Quiz Details
     useEffect(() => {
@@ -41,13 +42,16 @@ const QuizActive = () => {
             try {
                 const response = await axios.get(`/api/quiz/${id}`);
                 setQuiz(response.data);
-                setQuiz(response.data);
+                // setQuiz(response.data); // Removed duplicate line
                 setTimeLeft(response.data.duration_minutes * 60);
+
+                // Start the quiz (tracking attempt)
+                await axios.post(`/api/quiz/${id}/start`);
             } catch (error: any) {
                 console.error("Error fetching quiz", error);
                 if (error.response?.status === 400 || error.response?.status === 404) {
-                    alert(error.response.data.detail);
-                    navigate('/dashboard/quizzes'); // Redirect if already attempted or not found
+                    setMessageModal({ show: true, message: error.response.data.detail, type: 'error' });
+                    setTimeout(() => navigate('/dashboard/quizzes'), 2000); // Redirect after delay
                 }
             } finally {
                 setLoading(false);
@@ -77,25 +81,21 @@ const QuizActive = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loading]);
 
-
-
     // Proctoring Logic: Detect Tab Switch
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (document.hidden && quiz?.id) {
-                // User switched tabs!
-                // Since we don't have an attempt ID yet (created on submit), we can't log to DB easily without changing flow.
-                // WORKAROUND: We will log to console and show a scary toast on return.
-                // IF we really want to save to DB, we'd need to create the attempt record when the quiz STARTS.
-                // Given the constraints, I'll implement the "Scary Warning" on client side for now, 
-                // and if I can, call a modified endpoint.
+        // STRICT RULE: Only track when quiz is fully loaded and NOT submitting
+        if (loading || submitting || !quiz) return;
 
-                // Let's try to call a new endpoint that takes quiz_id and implicitly logs to "pending" attempt or creates one?
-                // For safety: Local warning + Toast.
-                alert("⚠️ WARNING: Tab switching is monitored! focusing away from the quiz may lead to disqualification.");
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                tabSwitchCountRef.current += 1;
 
-                // Try to log if we had an endpoint:
-                // await axios.post(`/api/quiz/${quiz.id}/log-violation`);
+                // Optional: Show warning (but logic is now strictly counting)
+                setMessageModal({
+                    show: true,
+                    message: "⚠️ WARNING: Tab switching is monitored! Focusing away from the quiz may lead to disqualification.",
+                    type: 'warning'
+                });
             }
         };
 
@@ -103,7 +103,7 @@ const QuizActive = () => {
         return () => {
             document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
-    }, [quiz]);
+    }, [loading, submitting, quiz]);
 
     // Format Time
     const formatTime = (seconds: number) => {
@@ -117,6 +117,11 @@ const QuizActive = () => {
     };
 
     const handleSubmitClick = () => {
+        // Prevent manual submit if no answers
+        if (Object.keys(answers).length === 0) {
+            setMessageModal({ show: true, message: "Please answer at least one question before submitting.", type: 'warning' });
+            return;
+        }
         setShowConfirm(true);
     };
 
@@ -130,31 +135,34 @@ const QuizActive = () => {
         setSubmitting(true);
 
         try {
-            const formattedAnswers = Object.entries(answers).map(([qId, oId]) => ({
+            // Use ref current value to ensure we have latest answers even if called from stale timer closure
+            const currentAnswers = answersRef.current;
+            const formattedAnswers = Object.entries(currentAnswers).map(([qId, oId]) => ({
                 question_id: parseInt(qId),
                 selected_option_id: oId
             }));
 
             // Send payload matching QuizSubmission schema: { answers: [...] }
-            await axios.post(`/api/quiz/${id}/submit`, { answers: formattedAnswers });
+            await axios.post(`/api/quiz/${id}/submit`, {
+                answers: formattedAnswers,
+                submission_type: auto ? 'auto_timeout' : 'manual',
+                tab_switch_count: tabSwitchCountRef.current
+            });
 
-            // Replaced alert with simple navigation. Ideally show a success toast but navigation is fast enough.
             navigate('/dashboard/student-quizzes');
         } catch (error: any) {
             console.error("Submission failed", error);
             const msg = error.response?.data?.detail || "Failed to submit quiz. Please try again.";
-            // Keep alert for error only as fallback, or simpler handling
-            alert(msg);
+
+            setMessageModal({ show: true, message: msg, type: 'error' });
+
             // If already attempted, force redirect
             if (error.response?.status === 400) {
-                navigate('/dashboard/student-quizzes');
+                setTimeout(() => navigate('/dashboard/student-quizzes'), 2000);
             }
             setSubmitting(false);
         }
-    }, [answers, id, navigate, submitting]);
-
-
-
+    }, [id, navigate, submitting]);
 
     if (loading) return <div className="p-12 text-center text-gray-500">Loading quiz...</div>;
     if (!quiz) return <div className="p-12 text-center text-red-500">Quiz not found</div>;
@@ -225,8 +233,6 @@ const QuizActive = () => {
                 </div>
             </div>
 
-
-
             {/* Custom Confirmation Modal */}
             {showConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
@@ -255,6 +261,33 @@ const QuizActive = () => {
                                     Submit
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Message Modal */}
+            {messageModal.show && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl transform transition-all scale-100">
+                        <div className="flex flex-col items-center text-center space-y-4">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${messageModal.type === 'error' ? 'bg-red-100 text-red-600' :
+                                messageModal.type === 'warning' ? 'bg-yellow-100 text-yellow-600' :
+                                    'bg-blue-100 text-blue-600'
+                                }`}>
+                                <AlertTriangle className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <p className="text-gray-800 font-medium">
+                                    {messageModal.message}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setMessageModal(prev => ({ ...prev, show: false }))}
+                                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                            >
+                                OK
+                            </button>
                         </div>
                     </div>
                 </div>
