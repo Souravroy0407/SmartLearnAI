@@ -1,16 +1,17 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sun, Moon, Sunrise, Coffee, MinusCircle } from 'lucide-react';
+import { Sun, Moon, Sunrise, MinusCircle } from 'lucide-react';
 import type { EnergyPreference } from '../utils/energyPlanner';
 
 interface EnergyPreferenceModalProps {
     isOpen: boolean;
+    onClose: () => void;
     onSelect: (preference: EnergyPreference) => void;
     title?: string;
     selectedPreference?: string | null;
 }
 
-const EnergyPreferenceModal: React.FC<EnergyPreferenceModalProps> = ({ isOpen, onSelect, title, selectedPreference }) => {
+const EnergyPreferenceModal: React.FC<EnergyPreferenceModalProps> = ({ isOpen, onClose, onSelect, title, selectedPreference }) => {
     return (
         <AnimatePresence>
             {isOpen && (
@@ -97,6 +98,15 @@ const EnergyPreferenceModal: React.FC<EnergyPreferenceModalProps> = ({ isOpen, o
                                     {(selectedPreference === 'none' || selectedPreference === 'balanced') && (
                                         <div className="absolute right-4 w-3 h-3 bg-gray-400 rounded-full" />
                                     )}
+                                </button>
+                            </div>
+
+                            <div className="mt-6 flex justify-center">
+                                <button
+                                    onClick={onClose}
+                                    className="bg-transparent hover:bg-secondary-light/10 text-secondary font-medium py-2 px-6 rounded-xl transition-colors text-sm"
+                                >
+                                    Cancel
                                 </button>
                             </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, AlertTriangle, X, Calendar, Edit3 } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, AlertTriangle, X, Calendar as CalendarIcon, Edit3, BrainCircuit, BookOpen, AlertCircle, ChevronLeft, Check, Edit2, RotateCcw, MinusCircle } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
@@ -549,7 +549,7 @@ const StudyPlanner = () => {
                                     else daysLeft = `${diffDays} days left`;
 
                                     return (
-                                        <div key={i} className="flex items-center gap-4 p-3 rounded-xl hover:bg-background transition-colors border border-transparent hover:border-secondary-light/10">
+                                        <div key={i} className="group relative flex items-center gap-4 p-3 rounded-xl hover:bg-background transition-colors border border-transparent hover:border-secondary-light/10">
                                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-error/5 to-error/10 flex flex-col items-center justify-center text-error border border-error/10">
                                                 <span className="text-xs font-bold uppercase">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
                                                 <span className="text-lg font-bold leading-none">{examDate.getDate()}</span>
@@ -562,6 +562,15 @@ const StudyPlanner = () => {
                                                 }`}>
                                                 {daysLeft}
                                             </span>
+
+                                            {/* Delete Button - visible on hover */}
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteExam(exam.id); }}
+                                                className="absolute top-2 right-2 p-1.5 bg-white text-secondary-light hover:text-error hover:bg-error/5 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all transform scale-90 hover:scale-100"
+                                                title="Delete Exam and Tasks"
+                                            >
+                                                <MinusCircle className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     );
                                 })
@@ -587,11 +596,13 @@ const StudyPlanner = () => {
 
             <EnergyPreferenceModal
                 isOpen={isEnergyModalOpen}
+                onClose={() => setIsEnergyModalOpen(false)}
                 onSelect={handleEnergySelect}
             />
 
             <EnergyPreferenceModal
                 isOpen={isPeakHourModalOpen}
+                onClose={() => setIsPeakHourModalOpen(false)}
                 onSelect={handlePeakHourUpdate}
                 title="Choose your Peak Study Hour"
                 selectedPreference={userEnergyPref}
@@ -824,8 +835,8 @@ const RescheduleAIModal = ({ task, suggestions, isLoading, onClose, onSelect }: 
                 <div className="p-6">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-2">
-                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
-                                <Sparkles className="w-6 h-6" />
+                            <div className="w-16 h-16 bg-secondary-light/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-secondary-light">
+                                <CalendarIcon className="w-8 h-8" />
                             </div>
                             <h3 className="text-xl font-bold text-secondary-dark">AI Reschedule</h3>
                         </div>

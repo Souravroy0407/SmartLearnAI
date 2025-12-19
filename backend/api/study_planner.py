@@ -86,11 +86,31 @@ def get_upcoming_exams(
     current_user: User = Depends(get_current_user)
 ):
     # Fetch exams for user, sorted by date, only future ones (or including today)
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     return db.query(Exam).filter(
         Exam.user_id == current_user.id,
         Exam.date >= today
     ).order_by(Exam.date.asc()).all()
+
+@router.delete("/exams/{exam_id}")
+def delete_exam(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Find the exam
+    exam = db.query(Exam).filter(Exam.id == exam_id, Exam.user_id == current_user.id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # 2. CASCADING DELETE: Delete all tasks linked to this exam
+    # Assuming we link tasks via exam_id
+    db.query(StudyTask).filter(StudyTask.exam_id == exam_id).delete()
+    
+    # 3. Delete the exam
+    db.delete(exam)
+    db.commit()
+    
+    return {"message": "Exam and associated tasks deleted successfully"}
 
 @router.post("/tasks", response_model=TaskResponse)
 def create_task(
@@ -180,7 +200,7 @@ def get_valid_gemini_model(api_key: str):
     # Final fallback if listing fails but we have a name
     return desired_model or "models/gemini-1.5-flash"
 
-def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User):
+def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User, exam_id: Optional[int] = None):
     """
     Fallback planner when AI fails. Distributes topics sequentially into peak hours.
     """
@@ -224,7 +244,8 @@ def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str
              start_time=start_time,
              duration_minutes=duration,
              status="pending",
-             color=color
+             color=color,
+             exam_id=exam_id
         )
         db.add(task)
         created_tasks.append(task)
@@ -258,9 +279,9 @@ def generate_study_plan(
     # Use stored preference if not provided in request (though frontend should send it)
     user_energy_pref = current_user.energy_preference or "balanced"
 
-    # 2. CLEAR EXISTING TASKS (Persistence Rule: New Plan = Fresh Start)
-    # Delete all tasks for this user
-    db.query(StudyTask).filter(StudyTask.user_id == current_user.id).delete()
+    # 2. PERSISTENCE FIX: Do NOT delete existing tasks.
+    # We will append new tasks.
+    # db.query(StudyTask).filter(StudyTask.user_id == current_user.id).delete()
     
     # Also clear existing future exams to keep sync (optional but cleaner for this flow)
     # db.query(Exam).filter(Exam.user_id == current_user.id).delete()
@@ -284,6 +305,10 @@ def generate_study_plan(
             date=datetime.strptime(request.exam_date, "%Y-%m-%d")
         )
         db.add(new_exam)
+        db.commit() # Commit to get ID
+        db.refresh(new_exam)
+        # Use new_exam
+        existing_exam = new_exam
     
     db.commit()
     
@@ -350,6 +375,12 @@ def generate_study_plan(
         created_tasks = []
         base_date_ref = datetime.now()
         
+        # PERSISTENCE FIX: Fetch existing future tasks to avoid overlap
+        existing_tasks = db.query(StudyTask).filter(
+            StudyTask.user_id == current_user.id,
+            StudyTask.start_time >= base_date_ref.replace(hour=0, minute=0, second=0, microsecond=0)
+        ).all()
+        
         for item in tasks_data:
             # Calculate start time based on offset and specified start_hour
             target_date = base_date_ref + timedelta(days=item['start_time_offset_days'])
@@ -380,13 +411,36 @@ def generate_study_plan(
             start_time = target_date.replace(hour=int(start_hour), minute=0, second=0, microsecond=0)
             
             # Conflict resolution: if multiple tasks scheduled for same time, offset them
-            days_tasks = [t for t in created_tasks if t.start_time.date() == start_time.date()]
+            # Check against BOTH created_tasks (this batch) AND existing_tasks (db)
             
-            if days_tasks:
-                 # Find the latest end time for today
-                 latest_end_time = max([t.start_time + timedelta(minutes=t.duration_minutes) for t in days_tasks])
-                 if start_time < latest_end_time:
-                     start_time = latest_end_time + timedelta(minutes=15) # 15 min break
+            # Simple conflict check loop
+            has_conflict = True
+            while has_conflict:
+                has_conflict = False
+                
+                # Check 1: Conflict with newly created tasks in this batch
+                for t in created_tasks:
+                    t_end = t.start_time + timedelta(minutes=t.duration_minutes)
+                    start_input_end = start_time + timedelta(minutes=item['duration_minutes'])
+                    
+                    # If overlap
+                    if start_time < t_end and start_input_end > t.start_time:
+                         # Shift this new task to start after the other one
+                         start_time = t_end + timedelta(minutes=15) # 15 min break
+                         has_conflict = True
+                         break
+                
+                if has_conflict: continue
+                
+                # Check 2: Conflict with existing DB tasks
+                for t in existing_tasks:
+                     t_end = t.start_time + timedelta(minutes=t.duration_minutes)
+                     start_input_end = start_time + timedelta(minutes=item['duration_minutes'])
+                     
+                     if start_time < t_end and start_input_end > t.start_time:
+                         start_time = t_end + timedelta(minutes=15)
+                         has_conflict = True
+                         break
             
             # --- OVERFLOW CHECK ---
             # If the adjusted start_time pushes the task OUT of the peak window, bump to next day
@@ -407,7 +461,8 @@ def generate_study_plan(
                 start_time=start_time,
                 duration_minutes=item['duration_minutes'],
                 status="pending",
-                color=item.get('color', 'bg-primary')
+                color=item.get('color', 'bg-primary'),
+                exam_id=existing_exam.id if existing_exam else None
             )
             db.add(task)
             created_tasks.append(task)
@@ -417,9 +472,18 @@ def generate_study_plan(
         
     except Exception as e:
         print(f"AI Generation Failed: {e}")
+        db.rollback() # CRITICAL: Rollback conflicting transaction before fallback
         # Fallback to deterministic planner
         print("Falling back to deterministic planner...")
-        return generate_deterministic_plan(request.subject, request.topics, user_energy_pref, datetime.now(), db, current_user)
+        return generate_deterministic_plan(
+            request.subject, 
+            request.topics, 
+            user_energy_pref, 
+            datetime.now(), 
+            db, 
+            current_user,
+            exam_id=existing_exam.id if existing_exam else None
+        )
 
 @router.post("/reoptimize")
 def reoptimize_study_plan(

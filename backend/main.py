@@ -24,6 +24,23 @@ try:
 except Exception as e:
     print(f"Migration warning: {e}")
 
+# Auto-Run Migration for study_tasks.exam_id
+try:
+    with database.engine.connect() as connection:
+        connection.execute(text("COMMIT")) 
+        result_col = connection.execute(text(
+            "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'study_tasks' AND COLUMN_NAME = 'exam_id'"
+        )).fetchone()
+        
+        if not result_col:
+            print("Migrating: Adding exam_id column to study_tasks...")
+            connection.execute(text("ALTER TABLE study_tasks ADD COLUMN exam_id INTEGER"))
+            connection.execute(text("ALTER TABLE study_tasks ADD CONSTRAINT fk_study_tasks_exams FOREIGN KEY (exam_id) REFERENCES exams(id)"))
+            connection.commit()
+            print("Migration (exam_id) successful.")
+except Exception as e:
+    print(f"Migration warning (exam_id): {e}")
+
 app = FastAPI(title="SmartLearn AI Backend")
 
 

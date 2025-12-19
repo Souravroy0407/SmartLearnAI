@@ -90,6 +90,7 @@ class StudyTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=True)
     title = Column(String(255))
     task_type = Column(String(50))  # Renamed from type to avoid keyword conflict
     start_time = Column(DateTime)
@@ -98,3 +99,4 @@ class StudyTask(Base):
     color = Column(String(50))
     
     user = relationship("User", back_populates="study_tasks")
+    exam = relationship("Exam", backref="tasks")
