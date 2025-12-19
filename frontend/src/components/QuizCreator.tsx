@@ -15,6 +15,8 @@ interface QuizCreatorProps {
 const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    const [topic, setTopic] = useState('');
+    const [difficulty, setDifficulty] = useState('Medium');
     const [duration, setDuration] = useState('30');
     const [deadline, setDeadline] = useState('');
     const [questions, setQuestions] = useState<Question[]>([
@@ -95,14 +97,19 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Transform generated questions to match local state format if needed
-            // The backend returns matching format: { text: string, options: [{text, is_correct}] }
-            setQuestions(res.data);
+            // The backend now returns { title: string, description: string, questions: Question[] }
+            const { title: aiTitle, description: aiDescription, questions: aiQuestions } = res.data;
+
+            setQuestions(aiQuestions);
             setGenerationMode('manual');
 
-            // Auto-fill title if empty
-            if (!title) setTitle(`${aiTopic} Quiz`);
-            if (!description) setDescription(`A ${aiDifficulty} difficulty quiz about ${aiSubject} - ${aiTopic}.`);
+            // Sync AI selections to main state
+            setTopic(aiTopic);
+            setDifficulty(aiDifficulty);
+
+            // Set Title/Description from AI
+            setTitle(aiTitle);
+            setDescription(aiDescription);
 
         } catch (err: any) {
             console.error("AI Generation failed", err);
@@ -118,6 +125,11 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
 
         if (!title.trim() || !description.trim()) {
             setError('Please fill in the quiz title and description.');
+            return;
+        }
+
+        if (!topic.trim()) {
+            setError('Please specify a topic.');
             return;
         }
 
@@ -147,6 +159,8 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
             await axios.post('/api/quiz/', {
                 title,
                 description,
+                topic,
+                difficulty,
                 duration_minutes: parseInt(duration),
                 deadline: deadline || null,
                 questions
@@ -356,6 +370,35 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                                             className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 placeholder-gray-400 min-h-[100px] font-medium resize-none"
                                             placeholder="Brief description of what this quiz covers..."
                                         />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Topic</label>
+                                        <input
+                                            type="text"
+                                            value={topic}
+                                            onChange={(e) => setTopic(e.target.value)}
+                                            className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
+                                            placeholder="e.g., General, Science, History"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Difficulty</label>
+                                        <div className="relative">
+                                            <select
+                                                value={difficulty}
+                                                onChange={(e) => setDifficulty(e.target.value)}
+                                                className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 appearance-none font-medium cursor-pointer"
+                                            >
+                                                <option value="Easy">Easy</option>
+                                                <option value="Medium">Medium</option>
+                                                <option value="Hard">Hard</option>
+                                            </select>
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

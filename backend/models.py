@@ -39,6 +39,8 @@ class Quiz(Base):
     teacher_id = Column(Integer, nullable=False) # ForeignKey can be added if Users table relationship is strict
     created_at = Column(String(50)) # Storing as ISO string or datetime
     deadline = Column(String(50), nullable=True) # Optional deadline for the quiz
+    difficulty = Column(String(50), nullable=False)
+    topic = Column(String(100), nullable=False)
 
     # Relationships can be added here if needed, but keeping it simple for now
     # questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
@@ -68,8 +70,11 @@ class QuizAttempt(Base):
     score = Column(Integer, default=0)
     total_questions = Column(Integer, default=0)
     status = Column(String(50), default="started") # started, completed
-    timestamp = Column(String(50))
+    timestamp = Column(String(50)) # This is effectively end_time
+    start_time = Column(String(50), nullable=True)
+    submission_type = Column(String(50), default="manual") # manual, auto_timeout
     warnings_count = Column(Integer, default=0)
+    tab_switch_count = Column(Integer, nullable=True)
 
     student_answers = relationship("StudentAnswer", back_populates="attempt", cascade="all, delete-orphan")
 

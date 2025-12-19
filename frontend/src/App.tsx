@@ -19,7 +19,9 @@ import LandingPage from './pages/LandingPage';
 import UserManagement from './pages/admin/UserManagement'; // Import User Management
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
 import StudentQuizList from './pages/student/StudentQuizList';
+
 import QuizActive from './pages/student/QuizActive';
+import QuizResult from './pages/student/QuizResult';
 
 
 function App() {
@@ -41,6 +43,7 @@ function App() {
 
                                 <Route path="doubt-solver" element={<DoubtSolver />} />
                                 <Route path="student-quizzes" element={<StudentQuizList />} />
+                                <Route path="student-quiz-result/:quizId" element={<QuizResult />} />
                             </Route>
                             {/* Analytics is open to all dashboard users */}
                             <Route path="analytics" element={<Analytics />} />
