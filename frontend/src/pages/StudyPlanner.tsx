@@ -5,6 +5,7 @@ import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
 import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
+import Toast, { type ToastType } from '../components/Toast'; // Import Toast
 
 interface StudyTask {
     id: number;
@@ -37,6 +38,8 @@ const StudyPlanner = () => {
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
     const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false); // Loading state
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null); // Toast state
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
@@ -247,23 +250,31 @@ const StudyPlanner = () => {
     const confirmDeleteExam = async () => {
         if (!examToDelete) return;
 
-        try {
-            // Optimistic Update: Remove from UI immediately
-            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id));
+        setIsDeleting(true); // Start loading
 
-            // Also remove tasks associated with this exam locally to update calendar immediately
-            // (Assuming we might know which ones, but fetchTasks will sync it)
-            setExamToDelete(null);
+        try {
+            // Optimistic Update: Remove from UI immediately for speed
+            // setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id)); -- Wait for backend confirmation per requirements
 
             await api.delete(`/api/study-planner/exams/${examToDelete.id}`);
+
+            // Success Handling
+            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id)); // Now remove
+            setExamToDelete(null);
+            setToast({ message: "Exam and study plan deleted successfully.", type: 'success' });
 
             // Refresh everything to be sure
             fetchTasks();
             fetchCalendarRange();
-            fetchExams();
+            // fetchExams(); // Already updated locally, but maybe good to sync? 
+            // Let's rely on local update for smoothness, but fetch in background if needed.
         } catch (error) {
             console.error("Error deleting exam:", error);
-            fetchExams(); // Revert
+            // Error Handling
+            setToast({ message: "Failed to delete exam. Please try again.", type: 'error' });
+            fetchExams(); // Revert any potential drifts
+        } finally {
+            setIsDeleting(false); // Stop loading
         }
     };
 
@@ -660,6 +671,15 @@ const StudyPlanner = () => {
                         <Loader2 className="w-6 h-6 text-primary animate-spin" />
                     </motion.div>
                 </div>
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
             )}
 
             {/* Delete Confirmation Modal (Task) */}

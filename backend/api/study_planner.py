@@ -72,7 +72,7 @@ def get_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    today_date = datetime.now()
+    today_date = None # Removed implicit usage
     
     # ORPHAN CLEANUP ON FETCH (Lazy cleanup)
     # Remove tasks that have an exam_id but the exam does not exist
@@ -378,6 +378,8 @@ def generate_study_plan(
     
     db.commit()
     
+    print(f"[DEBUG] Generating plan. Start: {request.start_date}, Exam: {request.exam_date}, First Task MUST be on {start_dt.date()}")
+    
     
     # 3. AI Generation
     try:
@@ -541,6 +543,18 @@ def generate_study_plan(
                 color=item.get('color', 'bg-primary'),
                 exam_id=existing_exam.id if existing_exam else None
             )
+            
+            # --- FINAL INTEGRITY CHECK ---
+            if is_first_task:
+                 if start_time.date() != start_dt.date():
+                      print(f"[CRITICAL ERROR] First task scheduled on {start_time.date()} but requested start date is {start_dt.date()}")
+                      # raise HTTPException(status_code=500, detail="Plan Generation Error: Failed to anchor start date.")
+                      # Instead of crashing, let's FORCE correct it one last time if it's off by just time (unlikely if .date() mismatch)
+                      # If it's a date mismatch, we MUST fix it.
+                      print("[RECOVERY] Forcing first task to start date.")
+                      start_time = start_time.replace(year=start_dt.year, month=start_dt.month, day=start_dt.day)
+                      task.start_time = start_time
+
             db.add(task)
             created_tasks.append(task)
             
