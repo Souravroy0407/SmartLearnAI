@@ -253,26 +253,38 @@ const StudyPlanner = () => {
         setIsDeleting(true); // Start loading
 
         try {
-            // Optimistic Update: Remove from UI immediately for speed
-            // setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id)); -- Wait for backend confirmation per requirements
-
+            // Await the API call separately
             await api.delete(`/api/study-planner/exams/${examToDelete.id}`);
 
-            // Success Handling
-            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id)); // Now remove
-            setExamToDelete(null);
-            setToast({ message: "Exam and study plan deleted successfully.", type: 'success' });
+            // 1. Update UI State (Remove from list)
+            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id));
 
-            // Refresh everything to be sure
+            // 2. Close Popup IMMEDIATELY
+            setExamToDelete(null);
+
+            // 3. Show Success Toast
+            setToast({
+                message: "Exam and associated study plan deleted successfully.",
+                type: 'success'
+            });
+
+            // 4. Trigger Background Refreshes
             fetchTasks();
             fetchCalendarRange();
-            // fetchExams(); // Already updated locally, but maybe good to sync? 
-            // Let's rely on local update for smoothness, but fetch in background if needed.
+
         } catch (error) {
             console.error("Error deleting exam:", error);
-            // Error Handling
-            setToast({ message: "Failed to delete exam. Please try again.", type: 'error' });
-            fetchExams(); // Revert any potential drifts
+
+            // FAILURE CASE:
+            // 1. Keep Popup Open (Do NOT nullify examToDelete)
+            // 2. Show Error Message
+            setToast({
+                message: "Failed to delete exam. Please try again.",
+                type: 'error'
+            });
+
+            // Optional: Re-fetch to ensure list is consistent if it was a weird sync error
+            fetchExams();
         } finally {
             setIsDeleting(false); // Stop loading
         }
@@ -669,6 +681,25 @@ const StudyPlanner = () => {
                             Optimizing your study plan for your peak hours...
                         </p>
                         <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Blocking Delete Modal */}
+            {isDeleting && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
+                    >
+                        <div className="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mb-6 text-error">
+                            <Loader2 className="w-8 h-8 animate-spin" />
+                        </div>
+                        <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Deleting Exam</h3>
+                        <p className="text-secondary text-center">
+                            Deleting your exam and associated study schedule. Please wait...
+                        </p>
                     </motion.div>
                 </div>
             )}
