@@ -36,6 +36,7 @@ const StudyPlanner = () => {
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
+    const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
@@ -168,6 +169,11 @@ const StudyPlanner = () => {
         fetchExams();
     }, [selectedDate]);
 
+    // Auto-cleanup orphans on mount
+    useEffect(() => {
+        api.delete('/api/study-planner/exams/cleanup/orphaned').catch(err => console.error("Cleanup failed", err));
+    }, []);
+
     const handleGenerateClick = () => {
         if (userEnergyPref) {
             setIsAIModalOpen(true);
@@ -228,6 +234,36 @@ const StudyPlanner = () => {
             console.error("Error deleting task:", error);
             // Revert or show error
             fetchTasks();
+        }
+    };
+
+    const handleDeleteExam = (examId: number) => {
+        const exam = upcomingExams.find(e => e.id === examId);
+        if (exam) {
+            setExamToDelete(exam);
+        }
+    };
+
+    const confirmDeleteExam = async () => {
+        if (!examToDelete) return;
+
+        try {
+            // Optimistic Update: Remove from UI immediately
+            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id));
+
+            // Also remove tasks associated with this exam locally to update calendar immediately
+            // (Assuming we might know which ones, but fetchTasks will sync it)
+            setExamToDelete(null);
+
+            await api.delete(`/api/study-planner/exams/${examToDelete.id}`);
+
+            // Refresh everything to be sure
+            fetchTasks();
+            fetchCalendarRange();
+            fetchExams();
+        } catch (error) {
+            console.error("Error deleting exam:", error);
+            fetchExams(); // Revert
         }
     };
 
@@ -626,7 +662,7 @@ const StudyPlanner = () => {
                 </div>
             )}
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete Confirmation Modal (Task) */}
             {taskToDelete && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <motion.div
@@ -666,6 +702,56 @@ const StudyPlanner = () => {
                                     className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
                                 >
                                     Delete Task
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal (Exam) */}
+            {examToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                    >
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                    <Trash2 className="w-6 h-6" />
+                                </div>
+                                <button
+                                    onClick={() => setExamToDelete(null)}
+                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this Exam?</h3>
+                            <p className="text-secondary mb-4">
+                                Are you sure you want to delete <span className="font-bold text-secondary-dark">"{examToDelete.title}"</span>?
+                            </p>
+                            <div className="bg-error/5 border border-error/10 rounded-xl p-3 mb-6 flex gap-3 text-error text-sm">
+                                <AlertTriangle className="w-5 h-5 shrink-0" />
+                                <p><strong>Warning:</strong> This will also delete the entire study schedule linked to this exam.</p>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setExamToDelete(null)}
+                                    className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDeleteExam}
+                                    className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                >
+                                    Delete Exam & Schedule
                                 </button>
                             </div>
                         </div>
@@ -744,7 +830,7 @@ const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: 
                         <div>
                             <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Date</label>
                             <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
                                 <input
                                     type="date"
                                     value={date}

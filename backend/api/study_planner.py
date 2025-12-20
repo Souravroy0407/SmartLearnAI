@@ -45,6 +45,7 @@ class GeneratePlanRequest(BaseModel):
     subject: str
     topics: str
     exam_date: str
+    start_date: str # YYYY-MM-DD
     hours_per_day: float
     energy_preference: Optional[str] = None
 
@@ -71,7 +72,26 @@ def get_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(StudyTask).filter(StudyTask.user_id == current_user.id)
+    today_date = datetime.now()
+    
+    # ORPHAN CLEANUP ON FETCH (Lazy cleanup)
+    # Remove tasks that have an exam_id but the exam does not exist
+    # This acts as a self-healing mechanism
+    
+    # 1. Select all distinct exam_ids from tasks for this user
+    # (Doing this properly with a subquery is better for DB, but here we keep it simple for SQLite/ORM)
+    # Actually, a better way is to simply join the Exam table and only return those where Exam exists OR exam_id is NULL (custom legacy)
+    # BUT user requirement is: "Return ONLY study plans where exam_id EXISTS".
+    # This implies we hide custom tasks w/o exam? 
+    # "If no exams exist -> return empty study plan list."
+    
+    # Strict Query: Join with Exam table.
+    # Tasks with exam_id which doesn't exist -> Won't match.
+    # Tasks with exam_id == NULL -> Won't match inner join.
+    
+    query = db.query(StudyTask).join(Exam, StudyTask.exam_id == Exam.id).filter(
+        StudyTask.user_id == current_user.id
+    )
     
     if start_date:
         query = query.filter(StudyTask.start_time >= start_date)
@@ -86,6 +106,7 @@ def get_upcoming_exams(
     current_user: User = Depends(get_current_user)
 ):
     # Fetch exams for user, sorted by date, only future ones (or including today)
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     return db.query(Exam).filter(
         Exam.user_id == current_user.id,
         Exam.date >= today
@@ -111,6 +132,42 @@ def delete_exam(
     db.commit()
     
     return {"message": "Exam and associated tasks deleted successfully"}
+
+@router.delete("/exams/cleanup/orphaned")
+def cleanup_orphaned_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Explicitly removes study tasks that reference non-existent exams.
+    """
+    # 1. Get all valid exam IDs for user
+    valid_exam_ids = db.query(Exam.id).filter(Exam.user_id == current_user.id).all()
+    valid_ids = [e.id for e in valid_exam_ids]
+    
+    # 2. Delete tasks where exam_id is NOT in valid_ids AND exam_id is NOT NULL
+    # (If we want to support custom tasks without exams, we'd keep NULLs. 
+    # But user asked to wipe everything if no exams exist, so let's check intent.
+    # User said: "Return ONLY study plans where exam_id EXISTS... If no exams exist -> return empty"
+    # This implies stricter cleanup. Let's delete anything with exam_id NOT in valid list.)
+    
+    deleted_count = 0
+    if not valid_ids:
+        # User has NO exams. Delete ALL tasks that are exam-related?
+        # Or ALL tasks?
+        # Let's delete ALL StudyTasks for this user to be safe and clean.
+        result = db.query(StudyTask).filter(StudyTask.user_id == current_user.id).delete()
+        deleted_count = result
+    else:
+        # Delete tasks with invalid exam_id
+        result = db.query(StudyTask).filter(
+            StudyTask.user_id == current_user.id,
+            StudyTask.exam_id.notin_(valid_ids)
+        ).delete()
+        deleted_count = result
+        
+    db.commit()
+    return {"message": f"Cleaned up {deleted_count} orphaned tasks."}
 
 @router.post("/tasks", response_model=TaskResponse)
 def create_task(
@@ -270,6 +327,15 @@ def generate_study_plan(
     if not api_key:
         raise HTTPException(status_code=500, detail="Gemini API Key not configured")
     
+    # 0. Validate Dates
+    try:
+        start_dt = datetime.strptime(request.start_date, "%Y-%m-%d")
+        exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
+        if start_dt >= exam_dt:
+             raise HTTPException(status_code=400, detail="Start Date must be before Exam Date")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Date Format (YYYY-MM-DD)")
+    
     # 1. Update Energy Preference if provided
     if request.energy_preference:
         current_user.energy_preference = request.energy_preference
@@ -319,7 +385,7 @@ def generate_study_plan(
         # print(f"Selected Model: {valid_model_name}") 
         model = genai.GenerativeModel(valid_model_name)
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        # today = datetime.now().strftime("%Y-%m-%d") # DEPRECATED: Use request.start_date
         
         # Energy Preference Logic
         energy_instructions = ""
@@ -335,7 +401,9 @@ def generate_study_plan(
         prompt = f"""
         You are an expert study planner. Create a study schedule for me.
         
-        Current Date: {today}
+        You are an expert study planner. Create a study schedule for me.
+        
+        Start Date: {request.start_date}
         Subject: {request.subject}
         Topics to Cover: {request.topics}
         Exam Date: {request.exam_date}
@@ -343,7 +411,7 @@ def generate_study_plan(
         User Energy Preference: {user_energy_pref}
         
         Requirements:
-        1. Break down the topics into daily study tasks up to the exam date.
+        1. Break down the topics into daily study tasks starting from {request.start_date} up to {request.exam_date}.
         2. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
         3. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
         4. {energy_instructions}
@@ -355,7 +423,7 @@ def generate_study_plan(
             {{
                 "title": "Topic Name: Activity",
                 "task_type": "Revision" | "Practice Quiz" | "Video Lecture" | "Assignment" | "New Concept" | "Problem Solving",
-                "start_time_offset_days": 0, // 0 for today, 1 for tomorrow, etc.
+                "start_time_offset_days": 0, // MUST BE 0 for the first task.
                 "start_hour": 9, // Desired start hour (0-23) based on energy preference
                 "duration_minutes": 60,
                 "color": "bg-primary" // bg-primary (standard), bg-warning (hard/focus), bg-success (easy/revision), bg-error (urgent)
@@ -373,7 +441,7 @@ def generate_study_plan(
         tasks_data = json.loads(text)
         
         created_tasks = []
-        base_date_ref = datetime.now()
+        base_date_ref = start_dt # Use user-defined start date
         
         # PERSISTENCE FIX: Fetch existing future tasks to avoid overlap
         existing_tasks = db.query(StudyTask).filter(
@@ -403,6 +471,10 @@ def generate_study_plan(
             elif user_energy_pref == "night":
                 allowed_start, allowed_end = night_window
                 
+            # SPECIAL CASE: FIRST TASK MUST START ON START DATE
+            # If this is the very first task (and offset is 0), force it to fit in the window WITHOUT bumping to next day
+            is_first_task = (len(created_tasks) == 0 and item.get('start_time_offset_days', 0) == 0)
+
             # Clamp start hour to window if outside
             if user_energy_pref in ["morning", "afternoon", "night"]:
                 if start_hour < allowed_start or start_hour >= allowed_end:
@@ -444,7 +516,7 @@ def generate_study_plan(
             
             # --- OVERFLOW CHECK ---
             # If the adjusted start_time pushes the task OUT of the peak window, bump to next day
-            if user_energy_pref in ["morning", "afternoon", "night"]:
+            if user_energy_pref in ["morning", "afternoon", "night"] and not is_first_task:
                 # task_end_hour = start_time.hour + (start_time.minute + item['duration_minutes']) / 60
                 
                 # If strictly outside window (e.g. starts at 10:15 AM for morning pref), move to next day
@@ -452,6 +524,11 @@ def generate_study_plan(
                      # Move to next day at allowed_start
                      start_time = start_time + timedelta(days=1)
                      start_time = start_time.replace(hour=allowed_start, minute=0, second=0, microsecond=0)
+            elif is_first_task and user_energy_pref in ["morning", "afternoon", "night"]:
+                 # For the first task, if it spills over, just clamp it to last allowed hour of TODAY if possible, or accept the overflow
+                 # Do NOT push to next day.
+                 if start_time.hour >= allowed_end:
+                      start_time = start_time.replace(hour=allowed_end - 1, minute=0, second=0, microsecond=0)
 
 
             task = StudyTask(
@@ -479,7 +556,7 @@ def generate_study_plan(
             request.subject, 
             request.topics, 
             user_energy_pref, 
-            datetime.now(), 
+            start_dt, 
             db, 
             current_user,
             exam_id=existing_exam.id if existing_exam else None
