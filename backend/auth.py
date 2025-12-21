@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from database import get_db
-from models import User
+from models import User, Student
 
 router = APIRouter()
 
@@ -77,6 +77,11 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     
+    # Create Student Record
+    new_student = Student(user_id=new_user.id, full_name=user.full_name)
+    db.add(new_student)
+    db.commit()
+
     # Include role, full_name and avatar_url in token
     access_token = create_access_token(data={"sub": new_user.email, "role": new_user.role, "full_name": new_user.full_name, "avatar_url": new_user.avatar_url})
     return {"access_token": access_token, "token_type": "bearer"}

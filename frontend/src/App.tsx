@@ -1,6 +1,8 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { QuizProvider } from './context/QuizContext';
+import { TeacherProvider } from './context/TeacherContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout'; // Import Admin Layout
@@ -19,6 +21,7 @@ import LandingPage from './pages/LandingPage';
 import UserManagement from './pages/admin/UserManagement'; // Import User Management
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
 import StudentQuizList from './pages/student/StudentQuizList';
+import Teachers from './pages/student/Teachers';
 
 import QuizActive from './pages/student/QuizActive';
 import QuizResult from './pages/student/QuizResult';
@@ -27,54 +30,58 @@ import QuizResult from './pages/student/QuizResult';
 function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/" element={<LandingPage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/signup" element={<SignupPage />} />
-                    <Route element={<ProtectedRoute />}>
-                        <Route path="/dashboard" element={<MainLayout />}>
-                            <Route index element={<Dashboard />} />
-                            <Route element={<ProtectedRoute allowedRoles={['student', 'teacher']} />}>
-                                <Route path="exam-checker" element={<ExamChecker />} />
+            <QuizProvider>
+                <TeacherProvider>
+                    <BrowserRouter>
+                        <Routes>
+                            <Route path="/" element={<LandingPage />} />
+                            <Route path="/login" element={<LoginPage />} />
+                            <Route path="/signup" element={<SignupPage />} />
+                            <Route element={<ProtectedRoute />}>
+                                <Route path="/dashboard" element={<MainLayout />}>
+                                    <Route index element={<Dashboard />} />
+                                    <Route element={<ProtectedRoute allowedRoles={['student', 'teacher']} />}>
+                                        <Route path="exam-checker" element={<ExamChecker />} />
+                                    </Route>
+                                    <Route element={<ProtectedRoute allowedRoles={['student']} />}>
+                                        <Route path="study-planner" element={<StudyPlanner />} />
+                                        <Route path="teachers" element={<Teachers />} />
+                                        <Route path="doubt-solver" element={<DoubtSolver />} />
+                                        <Route path="student-quizzes" element={<StudentQuizList />} />
+                                        <Route path="student-quiz-result/:quizId" element={<QuizResult />} />
+                                    </Route>
+                                    {/* Analytics is open to all dashboard users */}
+                                    <Route path="analytics" element={<Analytics />} />
+                                </Route>
                             </Route>
+
+
+
+                            {/* Admin Routes */}
+                            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+                                <Route path="/admin" element={<AdminLayout />}>
+                                    <Route index element={<AdminDashboard />} />
+                                    <Route path="users" element={<UserManagement />} />
+                                </Route>
+                            </Route>
+
+                            {/* Teacher Routes */}
+                            <Route element={<ProtectedRoute allowedRoles={['teacher']} />}>
+                                <Route path="/teacher" element={<TeacherLayout />}>
+                                    <Route index element={<TeacherDashboard />} />
+                                    <Route path="quizzes" element={<QuizManagement />} />
+                                    <Route path="exam-checker" element={<ExamChecker />} />
+                                </Route>
+                            </Route>
+
+                            {/* Student Exclusive Routes */}
                             <Route element={<ProtectedRoute allowedRoles={['student']} />}>
-                                <Route path="study-planner" element={<StudyPlanner />} />
-
-                                <Route path="doubt-solver" element={<DoubtSolver />} />
-                                <Route path="student-quizzes" element={<StudentQuizList />} />
-                                <Route path="student-quiz-result/:quizId" element={<QuizResult />} />
+                                <Route path="/student/quiz/:id" element={<QuizActive />} />
                             </Route>
-                            {/* Analytics is open to all dashboard users */}
-                            <Route path="analytics" element={<Analytics />} />
-                        </Route>
-                    </Route>
-
-
-
-                    {/* Admin Routes */}
-                    <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
-                        <Route path="/admin" element={<AdminLayout />}>
-                            <Route index element={<AdminDashboard />} />
-                            <Route path="users" element={<UserManagement />} />
-                        </Route>
-                    </Route>
-
-                    {/* Teacher Routes */}
-                    <Route element={<ProtectedRoute allowedRoles={['teacher']} />}>
-                        <Route path="/teacher" element={<TeacherLayout />}>
-                            <Route index element={<TeacherDashboard />} />
-                            <Route path="quizzes" element={<QuizManagement />} />
-                            <Route path="exam-checker" element={<ExamChecker />} />
-                        </Route>
-                    </Route>
-
-                    {/* Student Exclusive Routes */}
-                    <Route element={<ProtectedRoute allowedRoles={['student']} />}>
-                        <Route path="/student/quiz/:id" element={<QuizActive />} />
-                    </Route>
-                </Routes>
-            </BrowserRouter>
+                        </Routes>
+                    </BrowserRouter>
+                </TeacherProvider>
+            </QuizProvider>
         </AuthProvider>
     );
 }

@@ -16,7 +16,19 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
 
     // Edit Form State
     const [editName, setEditName] = useState('');
-    const [editAvatarUrl, setEditAvatarUrl] = useState(''); // This will store the final URL (remote or uploaded)
+    const [editAvatarUrl, setEditAvatarUrl] = useState('');
+
+    // Teacher Profile State
+    const [editBio, setEditBio] = useState('');
+    const [editSubjects, setEditSubjects] = useState('');
+    const [editExperience, setEditExperience] = useState('');
+    const [editTitle, setEditTitle] = useState('');
+    const [editEducation, setEditEducation] = useState('');
+    const [editLanguages, setEditLanguages] = useState('');
+    const [editStyle, setEditStyle] = useState('');
+    const [editLinkedin, setEditLinkedin] = useState('');
+    const [editWebsite, setEditWebsite] = useState('');
+
     const [isLoading, setIsLoading] = useState(false);
 
     // Cropper State
@@ -30,8 +42,24 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
 
     useEffect(() => {
         if (user) {
+            // Always sync state with user prop when it changes or modal opens
             setEditName(user.full_name || '');
             setEditAvatarUrl(user.avatar_url || '');
+
+            // Safety check for teacher fields
+            if (user.role === 'teacher') {
+                const u = user as any;
+                // Use optional chaining just in case, but Context should now have these
+                setEditBio(user.bio || u.bio || '');
+                setEditSubjects(user.subjects || u.subjects || '');
+                setEditExperience(user.experience || u.experience || '');
+                setEditTitle(user.professional_title || u.professional_title || '');
+                setEditEducation(user.education || u.education || '');
+                setEditLanguages(user.teaching_languages || u.teaching_languages || '');
+                setEditStyle(user.teaching_style || u.teaching_style || '');
+                setEditLinkedin(user.linkedin_url || u.linkedin_url || '');
+                setEditWebsite(user.website_url || u.website_url || '');
+            }
         }
     }, [user, isEditModalOpen]);
 
@@ -123,13 +151,28 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
     const handleSaveProfile = async () => {
         try {
             setIsLoading(true);
-            const response = await api.patch('/api/users/me', {
+            const payload: any = {
                 full_name: editName,
                 avatar_url: editAvatarUrl
-            });
+            };
+
+            if (user?.role === 'teacher') {
+                payload.bio = editBio;
+                payload.subjects = editSubjects;
+                payload.experience = editExperience;
+                payload.professional_title = editTitle;
+                payload.education = editEducation;
+                payload.teaching_languages = editLanguages;
+                payload.teaching_style = editStyle;
+                payload.linkedin_url = editLinkedin;
+                payload.website_url = editWebsite;
+            }
+
+            const response = await api.patch('/api/users/me', payload);
 
             if (response.data.access_token) {
-                login(response.data.access_token);
+                // Pass the updated user object to context so it persists without reload
+                login(response.data.access_token, response.data.user);
             }
 
             showToast("Profile updated successfully!", 'success');
@@ -218,16 +261,17 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
             {/* Edit Profile Modal */}
             {isEditModalOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <div className="flex items-center justify-between p-6 border-b border-secondary-light/20">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between p-6 border-b border-secondary-light/20 flex-shrink-0">
                             <h3 className="text-lg font-bold text-secondary-dark">Edit Profile</h3>
                             <button onClick={() => { setIsEditModalOpen(false); setImageSrc(null); setIsCropModalOpen(false); }} className="text-secondary hover:text-secondary-dark">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4">
-                            <div className="flex flex-col items-center gap-4 mb-6">
+                        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                            {/* Avatar Section */}
+                            <div className="flex flex-col items-center gap-4">
                                 <div className="relative group cursor-pointer w-24 h-24" onClick={() => fileInputRef.current?.click()}>
                                     <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
                                         {editAvatarUrl ? (
@@ -254,16 +298,134 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                 <p className="text-xs text-secondary">Click to change picture</p>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-secondary-dark">Full Name</label>
-                                <input
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    placeholder="Enter your name"
-                                />
+                            {/* Personal Info */}
+                            <div className="space-y-4">
+                                <h4 className="font-bold text-gray-900 border-b pb-2">Personal Information</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-secondary-dark">Full Name</label>
+                                        <input
+                                            type="text"
+                                            value={editName}
+                                            onChange={(e) => setEditName(e.target.value)}
+                                            className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                            placeholder="John Doe"
+                                        />
+                                    </div>
+                                    {user?.role === 'teacher' && (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-secondary-dark">Professional Title</label>
+                                            <input
+                                                type="text"
+                                                value={editTitle}
+                                                onChange={(e) => setEditTitle(e.target.value)}
+                                                className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                placeholder="e.g. Senior Math Educator"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+
+                            {/* Teacher Professional Info */}
+                            {user?.role === 'teacher' && (
+                                <>
+                                    <div className="space-y-4">
+                                        <h4 className="font-bold text-gray-900 border-b pb-2">Professional Details</h4>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-secondary-dark">About Me / Bio</label>
+                                            <textarea
+                                                value={editBio}
+                                                onChange={(e) => setEditBio(e.target.value)}
+                                                className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all min-h-[100px]"
+                                                placeholder="Share a brief introduction about your teaching experience and philosophy..."
+                                                maxLength={500}
+                                            />
+                                            <p className="text-xs text-secondary text-right">{editBio.length}/500</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Subjects (Comma separated)</label>
+                                                <input
+                                                    type="text"
+                                                    value={editSubjects}
+                                                    onChange={(e) => setEditSubjects(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="e.g. Math, Physics, Chemistry"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Years of Experience</label>
+                                                <input
+                                                    type="text"
+                                                    value={editExperience}
+                                                    onChange={(e) => setEditExperience(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="e.g. 5+ Years"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Education</label>
+                                                <input
+                                                    type="text"
+                                                    value={editEducation}
+                                                    onChange={(e) => setEditEducation(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="e.g. M.Sc. in Physics"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Teaching Languages</label>
+                                                <input
+                                                    type="text"
+                                                    value={editLanguages}
+                                                    onChange={(e) => setEditLanguages(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="e.g. English, Hindi"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-secondary-dark">Teaching Style (Optional)</label>
+                                            <input
+                                                type="text"
+                                                value={editStyle}
+                                                onChange={(e) => setEditStyle(e.target.value)}
+                                                className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                placeholder="e.g. Interactive and problem-solving focused"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <h4 className="font-bold text-gray-900 border-b pb-2">Links (Optional)</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">LinkedIn URL</label>
+                                                <input
+                                                    type="text"
+                                                    value={editLinkedin}
+                                                    onChange={(e) => setEditLinkedin(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="https://linkedin.com/in/..."
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Website / Portfolio</label>
+                                                <input
+                                                    type="text"
+                                                    value={editWebsite}
+                                                    onChange={(e) => setEditWebsite(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="https://..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         <div className="p-6 bg-gray-50 border-t border-secondary-light/20 flex justify-end gap-3">

@@ -118,6 +118,19 @@ const StudentExamList = () => {
                         </div>
                     ))}
                 </div>
+            ) : examStatuses.length === 0 && !loading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4 text-gray-400">
+                        <FileText className="w-8 h-8 opacity-20" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-600 mb-2">No Exams Found</h3>
+                    <p className="text-gray-500 mb-6 max-w-sm">
+                        You don't have any exams yet. Follow teachers to receive exam assignments.
+                    </p>
+                    <a href="/dashboard/teachers" className="px-6 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all">
+                        Browse Teachers
+                    </a>
+                </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {examStatuses.map(({ exam, status, marks }) => (
