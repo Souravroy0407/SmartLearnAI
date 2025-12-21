@@ -1,241 +1,75 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
 import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
-import Toast, { type ToastType } from '../components/Toast'; // Import Toast
-
-interface StudyTask {
-    id: number;
-    title: string;
-    task_type: string;
-    start_time: string;
-    duration_minutes: number;
-    status: string;
-    color: string;
-}
-
-// Exam interface removed as it is no longer managed here
-
-interface ExamResponse {
-    exam: {
-        id: number;
-        title: string;
-        deadline: string;
-        duration_minutes: number;
-    };
-    status: string;
-    marks: number | null;
-}
+import Toast, { type ToastType } from '../components/Toast';
+import { useStudyPlanner, type StudyTask, type ExamResponse } from '../context/StudyPlannerContext';
 
 
 
 const StudyPlanner = () => {
-    // State
+    // Global State
+    const {
+        allTasks,
+        exams,
+        calendarDays,
+        userEnergyPref,
+        isLoading: isGlobalLoading,
+        refreshData,
+        ensureDataLoaded,
+        updateTask: contextUpdateTask,
+        deleteTask: contextDeleteTask
+    } = useStudyPlanner();
+
+    // Local UI State
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-    const [tasks, setTasks] = useState<StudyTask[]>([]);
+    const [isMuted, setIsMuted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
     const [isPeakHourModalOpen, setIsPeakHourModalOpen] = useState(false);
     const [isEnergyModalOpen, setIsEnergyModalOpen] = useState(false);
-    const [userEnergyPref, setUserEnergyPref] = useState<string | null>(null);
 
     const [isOptimizing, setIsOptimizing] = useState(false);
-    const [isLoadingTasks, setIsLoadingTasks] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
-    // const [examToDelete, setExamToDelete] = useState<Exam | null>(null); // Deprecated
-
-    // const [isDeleting, setIsDeleting] = useState(false); // Deprecated exam deletion state
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null); // Toast state
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
     const [isFetchingAI, setIsFetchingAI] = useState(false);
-    const [exams, setExams] = useState<ExamResponse[]>([]);
 
-
-
-    const [calendarDays, setCalendarDays] = useState<{ day: string; date: number; fullDate: Date; active: boolean; hasTask: boolean }[]>([]);
-
-    // Fetch full calendar range
-    const fetchCalendarRange = async () => {
-        try {
-            // Get ALL tasks to determine range
-            const response = await api.get('/api/study-planner/tasks');
-            const allTasks: StudyTask[] = response.data;
-
-            if (allTasks.length === 0) {
-                // Fallback to today if empty
-                const today = new Date();
-                setCalendarDays([{
-                    day: today.toLocaleDateString('en-US', { weekday: 'short' }),
-                    date: today.getDate(),
-                    fullDate: today,
-                    active: true,
-                    hasTask: false
-                }]);
-                return;
-            }
-
-            // Find Min and Max date
-            const timestamps = allTasks.map(t => new Date(t.start_time).getTime());
-            const minDate = new Date(Math.min(...timestamps));
-            const maxDate = new Date(Math.max(...timestamps));
-
-            // Generate all days in range
-            const days = [];
-            let current = new Date(minDate);
-            // Normalize to start of day
-            current.setHours(0, 0, 0, 0);
-
-            const end = new Date(maxDate);
-            end.setHours(23, 59, 59, 999);
-
-            // Create a set of dates that have tasks for quick lookup
-            const taskDates = new Set(allTasks.map(t => new Date(t.start_time).toDateString()));
-
-            while (current <= end) {
-                days.push({
-                    day: current.toLocaleDateString('en-US', { weekday: 'short' }),
-                    date: current.getDate(),
-                    fullDate: new Date(current),
-                    active: true,
-                    hasTask: taskDates.has(current.toDateString())
-                });
-                current.setDate(current.getDate() + 1);
-            }
-            setCalendarDays(days);
-
-            // If selectedDate is outside range, select the first day
-            /* 
-               Checking if selectedDate is within [minDate, maxDate] is good, 
-               but technically we can let user select whatever. 
-               However, for better UX, if they generate a plan that starts tomorrow, 
-               we should probably jump to tomorrow.
-            */
-            // const startNormalized = new Date(minDate); startNormalized.setHours(0,0,0,0);
-            // if (selectedDate < startNormalized || selectedDate > end) {
-            //     setSelectedDate(startNormalized);
-            // }
-
-        } catch (error) {
-            console.error("Error fetching calendar range:", error);
-        }
-    };
-
-    // Initial load
+    // Initial Data Load
     useEffect(() => {
-        fetchCalendarRange();
+        ensureDataLoaded();
     }, []);
 
-    // Fetch user preference on mount
-    useEffect(() => {
-        const fetchUserPref = async () => {
-            try {
-                const response = await api.get('/api/users/me');
-                if (response.data.energy_preference) {
-                    setUserEnergyPref(response.data.energy_preference);
-                }
-            } catch (error) {
-                console.error("Error fetching user profile:", error);
-            }
-        };
-        fetchUserPref();
-    }, []);
+    // Derived State: Filter Tasks for Selected Date
+    const dailyTasks = useMemo(() => {
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
 
-    // Fetch tasks
-    const fetchTasks = async () => {
+        return allTasks.filter(t => {
+            const tDate = new Date(t.start_time);
+            return tDate >= startOfDay && tDate <= endOfDay;
+        });
+    }, [allTasks, selectedDate]);
+
+    const handleRefresh = async () => {
+        setIsMuted(true);
         try {
-            setIsLoadingTasks(true);
-            const startOfDay = new Date(selectedDate);
-            startOfDay.setHours(0, 0, 0, 0);
-
-            const endOfDay = new Date(selectedDate);
-            endOfDay.setHours(23, 59, 59, 999);
-
-            const response = await api.get('/api/study-planner/tasks', {
-                params: {
-                    start_date: startOfDay.toISOString(),
-                    end_date: endOfDay.toISOString()
-                }
-            });
-            setTasks(response.data);
+            await refreshData();
+            showToast('Schedule updated', 'success');
         } catch (error) {
-            console.error("Error fetching tasks:", error);
+            showToast('Failed to refresh', 'error');
         } finally {
-            setIsLoadingTasks(false);
+            setIsMuted(false);
         }
     };
-
-    const fetchExams = async () => {
-        let teacherExams: ExamResponse[] = [];
-        let convertedExams: ExamResponse[] = [];
-
-        try {
-            // 1. Fetch Teacher Exams (DISABLED to prevent 500 errors on empty table)
-            // The backend endpoint '/api/exam/list/student' returns 500 if no data/profile exists.
-            // Since AI exams are stored as StudyTasks, we skip this optional call for now.
-            /*
-            try {
-                const teacherExamsRes = await api.get('/api/exam/list/student');
-                if (Array.isArray(teacherExamsRes.data)) {
-                    teacherExams = teacherExamsRes.data;
-                }
-            } catch (err) {
-                // Expected failure if table is empty or student not enrolled. 
-            }
-            */
-
-            // 2. Fetch User "Exam" Tasks (Generated by AI)
-            const today = new Date();
-            const startOfDay = new Date(today);
-            startOfDay.setHours(0, 0, 0, 0);
-
-            const tasksRes = await api.get('/api/study-planner/tasks', {
-                params: {
-                    start_date: startOfDay.toISOString()
-                }
-            });
-            const allTasks: StudyTask[] = tasksRes.data;
-
-            // Filter for tasks that look like exams (Case insensitive check)
-            const examTasks = allTasks.filter(t =>
-                t.task_type.toLowerCase() === 'exam' ||
-                t.title.toLowerCase().includes('exam')
-            );
-
-            // 3. Convert Task to ExamResponse
-            convertedExams = examTasks.map(t => ({
-                exam: {
-                    id: -t.id, // Negative ID to avoid collision
-                    title: t.title,
-                    deadline: t.start_time,
-                    duration_minutes: t.duration_minutes
-                },
-                status: 'personal',
-                marks: null
-            }));
-
-            // 4. Merge and Sort
-            const merged = [...teacherExams, ...convertedExams].sort((a, b) =>
-                new Date(a.exam.deadline).getTime() - new Date(b.exam.deadline).getTime()
-            );
-
-            setExams(merged);
-        } catch (error) {
-            console.error("Critical error in fetchExams:", error);
-        }
-    };
-
-
-
-    useEffect(() => {
-        fetchTasks();
-        fetchExams();
-    }, [selectedDate]);
 
     // Auto-cleanup orphans removed (Endpoint deprecated)
     // useEffect(() => { ... }, []);
@@ -250,7 +84,8 @@ const StudyPlanner = () => {
     };
 
     const handleEnergySelect = (preference: any) => {
-        setUserEnergyPref(preference);
+        // Modal will likely trigger a refresh or we can set it via specialized setter if context had one.
+        // For now, since it updates the database, we rely on the refreshData after generation.
         setIsEnergyModalOpen(false);
         setIsAIModalOpen(true);
     };
@@ -258,16 +93,12 @@ const StudyPlanner = () => {
     const handlePeakHourUpdate = async (preference: any) => {
         try {
             setIsOptimizing(true);
-            // Call reoptimize endpoint
             await api.post('/api/study-planner/reoptimize', null, {
                 params: { energy_preference: preference }
             });
-            setUserEnergyPref(preference);
+            // Refresh Global Data
+            await refreshData();
             setIsPeakHourModalOpen(false);
-            setUserEnergyPref(preference);
-            setIsPeakHourModalOpen(false);
-            await fetchCalendarRange(); // Re-fetch range as optimization might change dates
-            await fetchTasks(); // Refresh tasks to show new times
         } catch (error) {
             console.error("Failed to reoptimize:", error);
         } finally {
@@ -276,15 +107,20 @@ const StudyPlanner = () => {
     };
 
     const handleTaskCompletion = async (taskId: number, currentStatus: string) => {
-        try {
-            const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
-            // Optimistic update
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
 
+        const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+        const updatedTask = { ...task, status: newStatus };
+
+        try {
+            // Optimistic update via Context
+            contextUpdateTask(updatedTask);
             await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
         } catch (error) {
             console.error("Error updating task:", error);
-            fetchTasks(); // Revert on error
+            contextUpdateTask(task); // Revert on error
+            showToast('Failed to update status', 'error');
         }
     };
 
@@ -292,16 +128,20 @@ const StudyPlanner = () => {
         if (!taskToDelete) return;
 
         try {
-            // Optimistic update
-            setTasks(prev => prev.filter(t => t.id !== taskToDelete.id));
+            // Optimistic update via Context
+            contextDeleteTask(taskToDelete.id);
             setTaskToDelete(null); // Close modal immediately
-
             await api.delete(`/api/study-planner/tasks/${taskToDelete.id}`);
+            showToast('Task deleted', 'success');
         } catch (error) {
             console.error("Error deleting task:", error);
-            // Revert or show error
-            fetchTasks();
+            showToast('Failed to delete task', 'error');
+            refreshData(); // Sync on error
         }
+    };
+
+    const showToast = (message: string, type: ToastType) => {
+        setToast({ message, type });
     };
 
     // Exam deletion functions removed as they are no longer used
@@ -311,19 +151,19 @@ const StudyPlanner = () => {
         if (!taskToReschedule) return;
 
         try {
-            // Optimistic update
-            setTasks(prev => prev.map(t =>
-                t.id === taskToReschedule.id ? { ...t, ...updatedTaskPart } : t
-            ));
+            // Update in context
+            const task = allTasks.find(t => t.id === taskToReschedule.id);
+            if (task) {
+                contextUpdateTask({ ...task, ...updatedTaskPart });
+            }
 
-            // Build API payload
-            // Note: API expects snake_case but our internal interface is also snake_case for props, so clean mapping
             await api.put(`/api/study-planner/tasks/${taskToReschedule.id}`, updatedTaskPart);
-
             setTaskToReschedule(null);
+            showToast('Task rescheduled', 'success');
         } catch (error) {
             console.error("Error updating task:", error);
-            fetchTasks();
+            refreshData();
+            showToast('Failed to reschedule', 'error');
         }
     };
 
@@ -348,17 +188,19 @@ const StudyPlanner = () => {
                 start_time: suggestion.iso_start_time
             };
 
-            // Optimistic update
-            setTasks(prev => prev.map(t =>
-                t.id === taskToRescheduleAI.id ? { ...t, ...updatedPart } : t
-            ));
+            const task = allTasks.find(t => t.id === taskToRescheduleAI.id);
+            if (task) {
+                contextUpdateTask({ ...task, ...updatedPart });
+            }
 
             await api.put(`/api/study-planner/tasks/${taskToRescheduleAI.id}`, updatedPart);
             setTaskToRescheduleAI(null);
             setAiSuggestions([]);
+            showToast('AI suggestion applied', 'success');
         } catch (error) {
             console.error("Error applying AI suggestion:", error);
-            fetchTasks();
+            refreshData();
+            showToast('Failed to apply suggestion', 'error');
         }
     };
 
@@ -468,16 +310,26 @@ const StudyPlanner = () => {
 
                     {/* Timeline */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-bold text-secondary-dark">
-                            Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                        </h3>
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-secondary-dark">
+                                Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                            </h3>
+                            <button
+                                onClick={handleRefresh}
+                                className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                                disabled={isGlobalLoading}
+                                title="Refresh Schedule"
+                            >
+                                <RotateCw className={`w-5 h-5 ${isGlobalLoading ? 'animate-spin' : ''}`} />
+                            </button>
+                        </div>
 
-                        {isLoadingTasks ? (
+                        {isGlobalLoading && !dailyTasks.length ? (
                             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-secondary-light/20">
                                 <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
                                 <p className="text-secondary font-medium">Loading your study plan...</p>
                             </div>
-                        ) : tasks.length === 0 ? (
+                        ) : dailyTasks.length === 0 ? (
                             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-secondary-light/30">
                                 <p className="text-secondary mb-4">No tasks scheduled for this day.</p>
                                 <button
@@ -488,8 +340,8 @@ const StudyPlanner = () => {
                                 </button>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {tasks.map((task, index) => (
+                            <div className={`space-y-4 ${isMuted ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {dailyTasks.map((task, index) => (
                                     <motion.div
                                         key={task.id}
                                         initial={{ opacity: 0, y: 10 }}
@@ -590,20 +442,20 @@ const StudyPlanner = () => {
                         <p className="text-sm text-secondary mb-6">{selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}'s Progress</p>
 
                         <div className="flex items-end gap-2 mb-2">
-                            <span className="text-4xl font-bold text-primary">{tasks.filter(t => t.status === 'completed').length}</span>
-                            <span className="text-lg text-secondary-light font-medium mb-1">/ {tasks.length} tasks</span>
+                            <span className="text-4xl font-bold text-primary">{dailyTasks.filter(t => t.status === 'completed').length}</span>
+                            <span className="text-lg text-secondary-light font-medium mb-1">/ {dailyTasks.length} tasks</span>
                         </div>
 
                         <div className="w-full h-3 bg-secondary-light/10 rounded-full overflow-hidden">
                             <div
                                 className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${tasks.length === 0 ? 0 : Math.round((tasks.filter(t => t.status === 'completed').length / tasks.length) * 100)}%` }}
+                                style={{ width: `${dailyTasks.length === 0 ? 0 : Math.round((dailyTasks.filter(t => t.status === 'completed').length / dailyTasks.length) * 100)}%` }}
                             ></div>
                         </div>
 
                         <p className="text-xs text-secondary mt-4 flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-warning" />
-                            {tasks.filter(t => t.status === 'completed').length === tasks.length && tasks.length > 0
+                            {dailyTasks.filter(t => t.status === 'completed').length === dailyTasks.length && dailyTasks.length > 0
                                 ? "All caught up! Great job!"
                                 : "Keep going, you're doing great!"}
                         </p>
@@ -667,14 +519,14 @@ const StudyPlanner = () => {
                 <CreateTaskModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
-                    onTaskCreated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
+                    onTaskCreated={() => refreshData()}
                     selectedDate={selectedDate}
                 />
 
                 <GeneratePlanModal
                     isOpen={isAIModalOpen}
                     onClose={() => setIsAIModalOpen(false)}
-                    onPlanGenerated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
+                    onPlanGenerated={() => refreshData()}
                     energyPreference={userEnergyPref}
                 />
 
