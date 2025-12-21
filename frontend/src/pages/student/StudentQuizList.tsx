@@ -1,22 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, RefreshCw, BarChart2 } from 'lucide-react';
-import axios from '../../api/axios';
 import { useNavigate } from 'react-router-dom';
-
-interface Quiz {
-    id: number;
-    title: string;
-    description: string;
-    duration_minutes: number;
-    questions_count: number;
-    status: 'active' | 'attempted' | 'expired';
-    score?: number;
-    attempted_count?: number;
-    created_at: string;
-    deadline?: string;
-    difficulty: string;
-    topic: string;
-}
+import { useQuiz, type Quiz } from '../../context/QuizContext';
 
 interface QuizDetailsModalProps {
     quiz: Quiz;
@@ -80,12 +65,22 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
 };
 
 const StudentQuizList = () => {
-    const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { quizzes, loading, fetchQuizzes } = useQuiz();
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const navigate = useNavigate();
+
+    // Sort quizzes: Unattempted first, then by date
+    const sortedQuizzes = [...quizzes].sort((a, b) => {
+        const aAttempted = a.status === 'attempted';
+        const bAttempted = b.status === 'attempted';
+
+        if (aAttempted !== bAttempted) {
+            return aAttempted ? 1 : -1; // Unattempted first
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
     // Progress Stats
     const totalQuizzes = quizzes.length;
@@ -94,36 +89,12 @@ const StudentQuizList = () => {
 
     useEffect(() => {
         fetchQuizzes();
-    }, []);
+    }, [fetchQuizzes]);
 
-    const fetchQuizzes = async (bg = false) => {
-        if (!bg && quizzes.length === 0) setLoading(true);
-        else setIsRefreshing(true);
-
-        try {
-            const res = await axios.get('/api/quiz/');
-            // Backend now filters and returns status/score directly!
-            const quizzesData = res.data;
-
-            // Sort: Unattempted first, then by date (newest first)
-            quizzesData.sort((a: any, b: any) => {
-                const aAttempted = a.status === 'attempted';
-                const bAttempted = b.status === 'attempted';
-
-                if (aAttempted !== bAttempted) {
-                    return aAttempted ? 1 : -1; // Unattempted first
-                }
-
-                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-            });
-
-            setQuizzes(quizzesData);
-        } catch (error) {
-            console.error('Failed to fetch quizzes:', error);
-        } finally {
-            setLoading(false);
-            setIsRefreshing(false);
-        }
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await fetchQuizzes(true);
+        setIsRefreshing(false);
     };
 
     const handleStartQuiz = (quizId: number) => {
@@ -134,10 +105,14 @@ const StudentQuizList = () => {
         navigate(`/dashboard/student-quiz-result/${quizId}`);
     };
 
-    const filteredQuizzes = quizzes.filter(quiz =>
+    const filteredQuizzes = sortedQuizzes.filter(quiz =>
         quiz.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         quiz.description.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    // Only show full page loader if we have no quizzes and it's loading
+    // Using isRefreshing to keep list visible during manual refresh
+    const showFullLoader = loading && quizzes.length === 0;
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
@@ -178,17 +153,17 @@ const StudentQuizList = () => {
                         />
                     </div>
                     <button
-                        onClick={() => fetchQuizzes(true)}
+                        onClick={handleRefresh}
                         disabled={loading || isRefreshing}
                         className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                         title="Refresh list"
                     >
-                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-                    {loading ? (
+                    {showFullLoader ? (
                         <div className="col-span-full py-20 text-center">
                             <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
                             <p className="text-gray-400 font-medium">Loading quizzes...</p>
@@ -199,7 +174,13 @@ const StudentQuizList = () => {
                                 <BookOpen className="w-8 h-8 opacity-20" />
                             </div>
                             <p className="text-lg font-medium text-gray-500">No quizzes found</p>
-                            <p className="text-sm">Check back later for new assessments!</p>
+                            <p className="text-sm mb-6">Follow teachers to access their quizzes and content.</p>
+                            <button
+                                onClick={() => navigate('/dashboard/teachers')}
+                                className="px-6 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+                            >
+                                Browse Teachers
+                            </button>
                         </div>
                     ) : (
                         filteredQuizzes.map((quiz) => (

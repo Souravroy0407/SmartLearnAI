@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { Clock, AlertTriangle } from 'lucide-react';
+import { useQuiz } from '../../context/QuizContext';
 
 interface Question {
     id: number;
@@ -20,6 +21,7 @@ interface Quiz {
 const QuizActive = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { fetchQuizzes } = useQuiz();
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
     const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -42,7 +44,6 @@ const QuizActive = () => {
             try {
                 const response = await axios.get(`/api/quiz/${id}`);
                 setQuiz(response.data);
-                // setQuiz(response.data); // Removed duplicate line
                 setTimeLeft(response.data.duration_minutes * 60);
 
                 // Start the quiz (tracking attempt)
@@ -148,6 +149,9 @@ const QuizActive = () => {
                 submission_type: auto ? 'auto_timeout' : 'manual',
                 tab_switch_count: tabSwitchCountRef.current
             });
+
+            // Force refresh of quiz list to update status to "attempted"
+            await fetchQuizzes(true);
 
             navigate('/dashboard/student-quizzes');
         } catch (error: any) {

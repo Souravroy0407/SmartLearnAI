@@ -9,7 +9,7 @@ import json
 import re
 
 from database import get_db
-from models import StudyTask, User, Exam
+from models import StudyTask, User
 from auth import get_current_user
 
 router = APIRouter()
@@ -35,7 +35,7 @@ class TaskUpdate(BaseModel):
 
 class TaskResponse(TaskBase):
     id: int
-    user_id: int
+    student_id: int
     status: str
 
     class Config:
@@ -54,14 +54,6 @@ class RescheduleSuggestion(BaseModel):
     display_text: str # "Today 9:00–10:00 PM"
     iso_start_time: datetime
 
-class ExamResponse(BaseModel):
-    id: int
-    title: str
-    date: datetime
-    
-    class Config:
-        from_attributes = True
-
 # --- Endpoints ---
 
 @router.get("/tasks", response_model=List[TaskResponse])
@@ -71,7 +63,10 @@ def get_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(StudyTask).filter(StudyTask.user_id == current_user.id)
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="User must have a student profile")
+    
+    query = db.query(StudyTask).filter(StudyTask.student_id == current_user.student_profile.id)
     
     if start_date:
         query = query.filter(StudyTask.start_time >= start_date)
@@ -80,47 +75,18 @@ def get_tasks(
         
     return query.all()
 
-@router.get("/exams", response_model=List[ExamResponse])
-def get_upcoming_exams(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # Fetch exams for user, sorted by date, only future ones (or including today)
-    return db.query(Exam).filter(
-        Exam.user_id == current_user.id,
-        Exam.date >= today
-    ).order_by(Exam.date.asc()).all()
-
-@router.delete("/exams/{exam_id}")
-def delete_exam(
-    exam_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # 1. Find the exam
-    exam = db.query(Exam).filter(Exam.id == exam_id, Exam.user_id == current_user.id).first()
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-    
-    # 2. CASCADING DELETE: Delete all tasks linked to this exam
-    # Assuming we link tasks via exam_id
-    db.query(StudyTask).filter(StudyTask.exam_id == exam_id).delete()
-    
-    # 3. Delete the exam
-    db.delete(exam)
-    db.commit()
-    
-    return {"message": "Exam and associated tasks deleted successfully"}
-
 @router.post("/tasks", response_model=TaskResponse)
 def create_task(
     task: TaskCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="User must have a student profile")
+
     db_task = StudyTask(
         **task.dict(),
-        user_id=current_user.id,
+        student_id=current_user.student_profile.id,
         status="pending"
     )
     db.add(db_task)
@@ -135,7 +101,10 @@ def update_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    db_task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.user_id == current_user.id).first()
+    if not current_user.student_profile:
+         raise HTTPException(status_code=400, detail="User must have a student profile")
+
+    db_task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.student_id == current_user.student_profile.id).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
@@ -153,14 +122,13 @@ def delete_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    db_task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.user_id == current_user.id).first()
+    if not current_user.student_profile:
+         raise HTTPException(status_code=400, detail="User must have a student profile")
+
+    db_task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.student_id == current_user.student_profile.id).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    db.delete(db_task)
-    db.commit()
-    return {"message": "Task deleted successfully"}
-
     db.delete(db_task)
     db.commit()
     return {"message": "Task deleted successfully"}
@@ -200,7 +168,7 @@ def get_valid_gemini_model(api_key: str):
     # Final fallback if listing fails but we have a name
     return desired_model or "models/gemini-1.5-flash"
 
-def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User, exam_id: Optional[int] = None):
+def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User):
     """
     Fallback planner when AI fails. Distributes topics sequentially into peak hours.
     """
@@ -238,14 +206,14 @@ def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str
              color = 'bg-warning' 
         
         task = StudyTask(
-             user_id=user.id,
+             student_id=user.student_profile.id,
              title=f"{topic}",
              task_type=task_type,
              start_time=start_time,
              duration_minutes=duration,
              status="pending",
              color=color,
-             exam_id=exam_id
+             exam_id=None # Deprecated link
         )
         db.add(task)
         created_tasks.append(task)
@@ -270,53 +238,36 @@ def generate_study_plan(
     if not api_key:
         raise HTTPException(status_code=500, detail="Gemini API Key not configured")
     
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="User must have a student profile")
+    
     # 1. Update Energy Preference if provided
     if request.energy_preference:
-        current_user.energy_preference = request.energy_preference
+        current_user.student_profile.energy_preference = request.energy_preference
         db.commit()
-        db.refresh(current_user)
+        db.refresh(current_user.student_profile) # Refresh profile
     
-    # Use stored preference if not provided in request (though frontend should send it)
-    user_energy_pref = current_user.energy_preference or "balanced"
+    # Use stored preference if not provided in request
+    user_energy_pref = current_user.student_profile.energy_preference or "balanced"
 
-    # 2. PERSISTENCE FIX: Do NOT delete existing tasks.
-    # We will append new tasks.
-    # db.query(StudyTask).filter(StudyTask.user_id == current_user.id).delete()
-    
-    # Also clear existing future exams to keep sync (optional but cleaner for this flow)
-    # db.query(Exam).filter(Exam.user_id == current_user.id).delete()
-    # Actually, let's keep it simple: Add new exam, maybe user has multiple subjects.
-    # But prompt says "Completely remove any previous". 
-    # Let's check if an exam for this subject exists and update it, or just add new.
-    # Simpler: Create new exam entry.
-    
-    # Check if exam exists for this exact subject/date to avoid dupes from multiple generations
-    existing_exam = db.query(Exam).filter(
-        Exam.user_id == current_user.id, 
-        Exam.title.ilike(f"%{request.subject}%")
-    ).first()
-    
-    if existing_exam:
-        existing_exam.date = datetime.strptime(request.exam_date, "%Y-%m-%d")
-    else:
-        new_exam = Exam(
-            user_id=current_user.id,
-            title=f"{request.subject} Exam",
-            date=datetime.strptime(request.exam_date, "%Y-%m-%d")
-        )
-        db.add(new_exam)
-        db.commit() # Commit to get ID
-        db.refresh(new_exam)
-        # Use new_exam
-        existing_exam = new_exam
-    
+    # 2. Add Exam Event as a StudyTask
+    exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
+    exam_task = StudyTask(
+        student_id=current_user.student_profile.id,
+        title=f"{request.subject} Exam",
+        task_type="Exam",
+        start_time=exam_dt.replace(hour=9, minute=0), # Default to 9 AM
+        duration_minutes=180, # 3 hours default
+        status="pending",
+        color="bg-error",
+        exam_id=None
+    )
+    db.add(exam_task)
     db.commit()
-    
     
     # 3. AI Generation
     try:
         valid_model_name = get_valid_gemini_model(api_key)
-        # print(f"Selected Model: {valid_model_name}") 
         model = genai.GenerativeModel(valid_model_name)
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -377,7 +328,7 @@ def generate_study_plan(
         
         # PERSISTENCE FIX: Fetch existing future tasks to avoid overlap
         existing_tasks = db.query(StudyTask).filter(
-            StudyTask.user_id == current_user.id,
+            StudyTask.student_id == current_user.student_profile.id,
             StudyTask.start_time >= base_date_ref.replace(hour=0, minute=0, second=0, microsecond=0)
         ).all()
         
@@ -423,10 +374,8 @@ def generate_study_plan(
                     t_end = t.start_time + timedelta(minutes=t.duration_minutes)
                     start_input_end = start_time + timedelta(minutes=item['duration_minutes'])
                     
-                    # If overlap
                     if start_time < t_end and start_input_end > t.start_time:
-                         # Shift this new task to start after the other one
-                         start_time = t_end + timedelta(minutes=15) # 15 min break
+                         start_time = t_end + timedelta(minutes=15)
                          has_conflict = True
                          break
                 
@@ -443,26 +392,20 @@ def generate_study_plan(
                          break
             
             # --- OVERFLOW CHECK ---
-            # If the adjusted start_time pushes the task OUT of the peak window, bump to next day
             if user_energy_pref in ["morning", "afternoon", "night"]:
-                # task_end_hour = start_time.hour + (start_time.minute + item['duration_minutes']) / 60
-                
-                # If strictly outside window (e.g. starts at 10:15 AM for morning pref), move to next day
                 if start_time.hour >= allowed_end:
-                     # Move to next day at allowed_start
                      start_time = start_time + timedelta(days=1)
                      start_time = start_time.replace(hour=allowed_start, minute=0, second=0, microsecond=0)
 
-
             task = StudyTask(
-                user_id=current_user.id,
+                student_id=current_user.student_profile.id,
                 title=item['title'],
                 task_type=item['task_type'],
                 start_time=start_time,
                 duration_minutes=item['duration_minutes'],
                 status="pending",
                 color=item.get('color', 'bg-primary'),
-                exam_id=existing_exam.id if existing_exam else None
+                exam_id=None
             )
             db.add(task)
             created_tasks.append(task)
@@ -472,8 +415,7 @@ def generate_study_plan(
         
     except Exception as e:
         print(f"AI Generation Failed: {e}")
-        db.rollback() # CRITICAL: Rollback conflicting transaction before fallback
-        # Fallback to deterministic planner
+        db.rollback() 
         print("Falling back to deterministic planner...")
         return generate_deterministic_plan(
             request.subject, 
@@ -481,26 +423,28 @@ def generate_study_plan(
             user_energy_pref, 
             datetime.now(), 
             db, 
-            current_user,
-            exam_id=existing_exam.id if existing_exam else None
+            current_user
         )
 
 @router.post("/reoptimize")
 def reoptimize_study_plan(
-    energy_preference: str = "", # Using Query param for simplicity
+    energy_preference: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if not energy_preference:
          raise HTTPException(status_code=400, detail="Energy preference is required")
 
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="User must have a student profile")
+
     # 1. Update Preference
-    current_user.energy_preference = energy_preference
+    current_user.student_profile.energy_preference = energy_preference
     db.commit()
     
     # 2. Get Pending Tasks
     tasks = db.query(StudyTask).filter(
-        StudyTask.user_id == current_user.id,
+        StudyTask.student_id == current_user.student_profile.id,
         StudyTask.status == "pending"
     ).all()
     
@@ -525,13 +469,11 @@ def reoptimize_study_plan(
         tasks_by_date[date_key].append(task)
         
     for date_key, day_tasks in tasks_by_date.items():
-        # Sort tasks by original start time to maintain intent
         day_tasks.sort(key=lambda x: x.start_time)
         
         current_time = datetime.combine(date_key, datetime.min.time()).replace(hour=peak_start_hour)
         for t in day_tasks:
             t.start_time = current_time
-            # Highlight hard tasks if they fit in peak (first 4 hours)
             is_peak = current_time.hour >= peak_start_hour and current_time.hour < (peak_start_hour + 4)
             if is_peak:
                 t.color = "bg-warning" # Peak focus
@@ -549,17 +491,17 @@ def get_reschedule_suggestions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.user_id == current_user.id).first()
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="User must have a student profile")
+
+    task = db.query(StudyTask).filter(StudyTask.id == task_id, StudyTask.student_id == current_user.student_profile.id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Local Logic
     suggestions = get_local_suggestions(task, db, current_user)
     
-    # AI Fallback if less than 2 suggestions
     if len(suggestions) < 2:
         ai_suggestions = get_gemini_suggestions(task, db, current_user)
-        # Merge and avoid duplicates (simple check by iso_start_time)
         existing_times = {s.iso_start_time for s in suggestions}
         for s in ai_suggestions:
             if s.iso_start_time not in existing_times and len(suggestions) < 3:
@@ -573,8 +515,10 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
     is_hard = any(k in task.task_type.lower() or k in task.title.lower() for k in hard_keywords)
     
     # 2. Peak Hours Logic
-    pref = (user.energy_preference or "balanced").lower()
-    
+    pref = (user.energy_preference or "balanced").lower() # Fallback to User if Student pref missing, or use student
+    if user.student_profile and user.student_profile.energy_preference:
+        pref = user.student_profile.energy_preference.lower()
+
     # Define hour blocks (4-hour windows)
     morning_slots = [6, 7, 8, 9]
     afternoon_slots = [12, 13, 14, 15]
@@ -589,19 +533,16 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
     else: # balanced / default
         peak, mid, low = morning_slots + [14, 15], evening_slots, [12, 13, 16, 17, 18]
 
-    # Order search hours based on difficulty
     if is_hard:
-        # Hard tasks: Peak hours first, then mid-energy, then low-energy
         base_search_hours = peak + mid + low
     else:
-        # Easy tasks: Mid-energy/Off-peak first, avoid peak if possible
         base_search_hours = mid + low + peak
 
-    # Fetch all tasks for the next 4 days to check conflicts in memory
+    # Fetch all tasks for the next 4 days
     now = datetime.now()
     end_of_range = now + timedelta(days=4)
     existing_tasks = db.query(StudyTask).filter(
-        StudyTask.user_id == user.id,
+        StudyTask.student_id == user.student_profile.id,
         StudyTask.start_time >= now.replace(hour=0, minute=0, second=0, microsecond=0),
         StudyTask.start_time <= end_of_range,
         StudyTask.id != task.id
@@ -609,15 +550,12 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
 
     suggestions = []
     
-    # Scan next 4 days
-    for day_offset in range(4): # 0 (today) to 3
+    for day_offset in range(4):
         check_date = (now + timedelta(days=day_offset)).date()
         
-        # Filter and deduplicate hours for this day
         search_hours = []
         for h in base_search_hours:
             if h not in search_hours and 6 <= h <= 23:
-                # If today, only allow future hours
                 if day_offset == 0 and h <= now.hour:
                     continue
                 search_hours.append(h)
@@ -626,7 +564,6 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
             start_time = datetime.combine(check_date, datetime.min.time()).replace(hour=hour)
             end_time = start_time + timedelta(minutes=task.duration_minutes)
             
-            # Check for conflicts in memory
             has_conflict = False
             for et in existing_tasks:
                 et_end = et.start_time + timedelta(minutes=et.duration_minutes)
@@ -655,7 +592,7 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
 def get_gemini_suggestions(task: StudyTask, db: Session, user: User) -> List[RescheduleSuggestion]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return [] # Silent fail or log
+        return []
         
     genai.configure(api_key=api_key)
     try:
@@ -663,19 +600,22 @@ def get_gemini_suggestions(task: StudyTask, db: Session, user: User) -> List[Res
     except:
         model = genai.GenerativeModel("gemini-1.5-flash")
     
-    # Get other tasks for context to avoid conflicts
     other_tasks = db.query(StudyTask).filter(
-        StudyTask.user_id == user.id,
+        StudyTask.student_id == user.student_profile.id,
         StudyTask.start_time >= datetime.now(),
         StudyTask.id != task.id
     ).order_by(StudyTask.start_time).limit(20).all()
     
     tasks_context = [{"title": t.title, "start": t.start_time.isoformat(), "duration": t.duration_minutes} for t in other_tasks]
     
+    pref = user.energy_preference or 'balanced'
+    if user.student_profile and user.student_profile.energy_preference:
+        pref = user.student_profile.energy_preference
+
     prompt = f"""
     You are a study assistant. Suggest 3 alternative time slots for this study task:
     Task: "{task.title}" ({task.task_type}, {task.duration_minutes} mins)
-    User Preference: {user.energy_preference or 'balanced'}
+    User Preference: {pref}
     Current Time: {datetime.now().isoformat()}
     
     Existing Schedule: {json.dumps(tasks_context)}

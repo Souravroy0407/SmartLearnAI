@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
-import { 
-    CheckCircle, XCircle, Clock, Award, ArrowLeft, 
-    Layout, AlertTriangle, MousePointer 
+import {
+    CheckCircle, XCircle, Clock, Award, ArrowLeft,
+    Layout, AlertTriangle, MousePointer
 } from 'lucide-react';
 
 interface QuestionReview {
@@ -26,6 +26,7 @@ interface QuizResultData {
     percentage: number;
     correct_count: number;
     wrong_count: number;
+    unattempted_count: number;
     time_taken: string;
     tab_switch_count: number;
     submission_type: string;
@@ -69,7 +70,7 @@ const QuizResult = () => {
                 <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
                 <h2 className="text-xl font-bold text-red-700 mb-2">Error Loading Results</h2>
                 <p className="text-red-600 mb-6">{error || "Result not found"}</p>
-                <button 
+                <button
                     onClick={() => navigate('/dashboard/student-quizzes')}
                     className="px-6 py-2 bg-white text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
                 >
@@ -84,11 +85,11 @@ const QuizResult = () => {
             {/* Header / Summary Card */}
             <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl shadow-gray-200/40 overflow-hidden relative">
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary to-purple-500" />
-                
+
                 <div className="p-8 md:p-10">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                         <div>
-                            <button 
+                            <button
                                 onClick={() => navigate('/dashboard/student-quizzes')}
                                 className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors mb-4 font-medium text-sm"
                             >
@@ -103,9 +104,9 @@ const QuizResult = () => {
 
                         <div className={`
                             px-6 py-3 rounded-2xl text-xl font-bold flex items-center gap-3 border shadow-sm
-                            ${result.percentage >= 70 ? 'bg-green-50 text-green-700 border-green-100' : 
-                              result.percentage >= 40 ? 'bg-yellow-50 text-yellow-700 border-yellow-100' : 
-                              'bg-red-50 text-red-700 border-red-100'}
+                            ${result.percentage >= 70 ? 'bg-green-50 text-green-700 border-green-100' :
+                                result.percentage >= 40 ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                    'bg-red-50 text-red-700 border-red-100'}
                         `}>
                             <Award className="w-6 h-6" />
                             {result.percentage}% Score
@@ -113,7 +114,7 @@ const QuizResult = () => {
                     </div>
 
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                         <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center hover:bg-white hover:shadow-md transition-all">
                             <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Total Score</p>
                             <p className="text-2xl font-black text-gray-800">{result.score} <span className="text-gray-400 text-base font-medium">/ {result.total_questions}</span></p>
@@ -126,6 +127,10 @@ const QuizResult = () => {
                             <p className="text-red-600/70 text-xs font-bold uppercase tracking-wider mb-1">Incorrect</p>
                             <p className="text-2xl font-black text-red-700">{result.wrong_count}</p>
                         </div>
+                        <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100 text-center hover:bg-orange-50 transition-all">
+                            <p className="text-orange-600/70 text-xs font-bold uppercase tracking-wider mb-1">Unattempted</p>
+                            <p className="text-2xl font-black text-orange-700">{result.unattempted_count}</p>
+                        </div>
                         <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-center hover:bg-blue-50 transition-all">
                             <p className="text-blue-600/70 text-xs font-bold uppercase tracking-wider mb-1">Time Taken</p>
                             <p className="text-2xl font-black text-blue-700 flex justify-center items-center gap-2">
@@ -137,14 +142,14 @@ const QuizResult = () => {
 
                     {/* Meta Stats */}
                     <div className="mt-6 flex flex-wrap gap-4 text-sm text-gray-500 font-medium">
-                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
                             <Layout className="w-4 h-4" />
                             Tab Switches: <span className={result.tab_switch_count > 0 ? "text-red-500 font-bold" : "text-gray-700"}>{result.tab_switch_count}</span>
-                         </div>
-                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
                             <MousePointer className="w-4 h-4" />
                             Submission: <span className="text-gray-700 capitalize">{result.submission_type}</span>
-                         </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -155,16 +160,18 @@ const QuizResult = () => {
                 <div className="space-y-6">
                     {result.questions.map((q, index) => (
                         <div key={q.id} className={`
-                            bg-white rounded-3xl border p-6 md:p-8 transition-all relative overflow-hidden
-                            ${q.is_correct ? 'border-gray-100 shadow-sm' : 'border-red-100 shadow-sm shadow-red-100/20'}
+                            ${q.is_correct ? 'border-gray-100 shadow-sm' :
+                                q.selected_option_id ? 'border-red-100 shadow-sm shadow-red-100/20' : 'border-gray-200 border-dashed'}
                         `}>
                             {/* Question Status Stripe */}
-                            <div className={`absolute top-0 left-0 w-1.5 h-full ${q.is_correct ? 'bg-green-500' : 'bg-red-500'}`} />
+                            <div className={`absolute top-0 left-0 w-1.5 h-full ${q.is_correct ? 'bg-green-500' :
+                                q.selected_option_id ? 'bg-red-500' : 'bg-gray-300'}`} />
 
                             <div className="flex gap-4 mb-6">
                                 <span className={`
                                     flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
-                                    ${q.is_correct ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}
+                                    ${q.is_correct ? 'bg-green-100 text-green-700' :
+                                        q.selected_option_id ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}
                                 `}>
                                     {index + 1}
                                 </span>
@@ -175,7 +182,7 @@ const QuizResult = () => {
                                 {q.options.map((opt) => {
                                     const isSelected = q.selected_option_id === opt.id;
                                     const isCorrect = opt.is_correct; // Only revealed in result
-                                    
+
                                     let optionClass = "border-gray-100 hover:bg-gray-50";
                                     let icon = null;
 

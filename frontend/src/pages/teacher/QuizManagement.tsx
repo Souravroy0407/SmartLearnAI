@@ -4,16 +4,7 @@ import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, Book
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
 import Toast, { type ToastType } from '../../components/Toast';
-
-interface Quiz {
-    id: number;
-    title: string;
-    description: string;
-    duration_minutes: number;
-    questions_count: number;
-    created_at: string;
-    deadline?: string;
-}
+import { useQuiz, type Quiz } from '../../context/QuizContext';
 
 interface QuizDetailsModalProps {
     quiz: Quiz;
@@ -329,8 +320,7 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
 
 
 const QuizManagement = () => {
-    const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { quizzes, loading, fetchQuizzes, removeQuiz } = useQuiz();
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [showCreator, setShowCreator] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -345,24 +335,15 @@ const QuizManagement = () => {
         return new Date() > new Date(deadline);
     };
 
-    const fetchQuizzes = async (bg = false) => {
-        if (!bg && quizzes.length === 0) setLoading(true);
-        else setIsRefreshing(true);
-
-        try {
-            const res = await axios.get('/api/quiz/');
-            setQuizzes(res.data);
-        } catch (error) {
-            console.error("Failed to fetch quizzes", error);
-        } finally {
-            setLoading(false);
-            setIsRefreshing(false);
-        }
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await fetchQuizzes(true);
+        setIsRefreshing(false);
     };
 
     useEffect(() => {
         fetchQuizzes();
-    }, []);
+    }, [fetchQuizzes]);
 
     const handleDeleteClick = (id: number) => {
         setQuizToDelete(id);
@@ -372,12 +353,10 @@ const QuizManagement = () => {
     const confirmDelete = async () => {
         if (!quizToDelete) return;
 
-        // Optimistic UI Update
-        const previousQuizzes = [...quizzes];
         const idToDelete = quizToDelete; // Capture ID
 
-        // Immediately update UI
-        setQuizzes(quizzes.filter(q => q.id !== idToDelete));
+        // Optimistic UI Update using Context
+        removeQuiz(idToDelete);
         setShowDeleteModal(false);
         setQuizToDelete(null);
 
@@ -387,8 +366,8 @@ const QuizManagement = () => {
             setToast({ message: "Quiz deleted successfully", type: "success" });
         } catch (error) {
             console.error("Failed to delete quiz", error);
-            // Revert on failure
-            setQuizzes(previousQuizzes);
+            // Revert on failure by refetching
+            fetchQuizzes(true);
             setToast({ message: "Failed to delete quiz. Please try again", type: "error" });
         }
     };
@@ -423,17 +402,17 @@ const QuizManagement = () => {
                         />
                     </div>
                     <button
-                        onClick={() => fetchQuizzes(true)}
+                        onClick={handleRefresh}
                         disabled={loading || isRefreshing}
                         className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                         title="Refresh list"
                     >
-                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing || loading ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-                    {loading ? (
+                    {loading && quizzes.length === 0 ? (
                         <div className="col-span-full py-20 text-center">
                             <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4" />
                             <p className="text-gray-400 font-medium">Loading quizzes...</p>
@@ -557,7 +536,7 @@ const QuizManagement = () => {
                 />
             )}
 
-            {showCreator && <QuizCreator onClose={() => setShowCreator(false)} onSuccess={fetchQuizzes} />}
+            {showCreator && <QuizCreator onClose={() => setShowCreator(false)} onSuccess={() => fetchQuizzes(true)} />}
 
             {toast && (
                 <Toast
