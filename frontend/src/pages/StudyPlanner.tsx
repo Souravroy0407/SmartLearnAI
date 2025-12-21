@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, AlertTriangle, X, Calendar as CalendarIcon, Edit3, BrainCircuit, BookOpen, AlertCircle, ChevronLeft, Check, Edit2, RotateCcw, MinusCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
@@ -17,11 +17,9 @@ interface StudyTask {
     color: string;
 }
 
-interface Exam {
-    id: number;
-    title: string;
-    date: string;
-}
+// Exam interface removed as it is no longer managed here
+// interface Exam { ... } deprecated
+
 
 const StudyPlanner = () => {
     // State
@@ -37,14 +35,16 @@ const StudyPlanner = () => {
     const [isLoadingTasks, setIsLoadingTasks] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
-    const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
-    const [isDeleting, setIsDeleting] = useState(false); // Loading state
+    // const [examToDelete, setExamToDelete] = useState<Exam | null>(null); // Deprecated
+
+    // const [isDeleting, setIsDeleting] = useState(false); // Deprecated exam deletion state
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null); // Toast state
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
     const [isFetchingAI, setIsFetchingAI] = useState(false);
-    const [upcomingExams, setUpcomingExams] = useState<Exam[]>([]);
+    // const [upcomingExams, setUpcomingExams] = useState<Exam[]>([]); // Deprecated
+
 
     const [calendarDays, setCalendarDays] = useState<{ day: string; date: number; fullDate: Date; active: boolean; hasTask: boolean }[]>([]);
 
@@ -158,24 +158,16 @@ const StudyPlanner = () => {
         }
     };
 
-    const fetchExams = async () => {
-        try {
-            const response = await api.get('/api/study-planner/exams');
-            setUpcomingExams(response.data);
-        } catch (error) {
-            console.error("Error fetching exams:", error);
-        }
-    };
+    // fetchExams removed
+
 
     useEffect(() => {
         fetchTasks();
-        fetchExams();
     }, [selectedDate]);
 
-    // Auto-cleanup orphans on mount
-    useEffect(() => {
-        api.delete('/api/study-planner/exams/cleanup/orphaned').catch(err => console.error("Cleanup failed", err));
-    }, []);
+    // Auto-cleanup orphans removed (Endpoint deprecated)
+    // useEffect(() => { ... }, []);
+
 
     const handleGenerateClick = () => {
         if (userEnergyPref) {
@@ -240,55 +232,8 @@ const StudyPlanner = () => {
         }
     };
 
-    const handleDeleteExam = (examId: number) => {
-        const exam = upcomingExams.find(e => e.id === examId);
-        if (exam) {
-            setExamToDelete(exam);
-        }
-    };
+    // Exam deletion functions removed as they are no longer used
 
-    const confirmDeleteExam = async () => {
-        if (!examToDelete) return;
-
-        setIsDeleting(true); // Start loading
-
-        try {
-            // Await the API call separately
-            await api.delete(`/api/study-planner/exams/${examToDelete.id}`);
-
-            // 1. Update UI State (Remove from list)
-            setUpcomingExams(prev => prev.filter(e => e.id !== examToDelete.id));
-
-            // 2. Close Popup IMMEDIATELY
-            setExamToDelete(null);
-
-            // 3. Show Success Toast
-            setToast({
-                message: "Exam and associated study plan deleted successfully.",
-                type: 'success'
-            });
-
-            // 4. Trigger Background Refreshes
-            fetchTasks();
-            fetchCalendarRange();
-
-        } catch (error) {
-            console.error("Error deleting exam:", error);
-
-            // FAILURE CASE:
-            // 1. Keep Popup Open (Do NOT nullify examToDelete)
-            // 2. Show Error Message
-            setToast({
-                message: "Failed to delete exam. Please try again.",
-                type: 'error'
-            });
-
-            // Optional: Re-fetch to ensure list is consistent if it was a weird sync error
-            fetchExams();
-        } finally {
-            setIsDeleting(false); // Stop loading
-        }
-    };
 
     const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
         if (!taskToReschedule) return;
@@ -565,278 +510,178 @@ const StudyPlanner = () => {
                     </div>
                 </div>
 
-                {/* Sidebar Stats (Static for now, could be dynamic later) */}
+                {/* Sidebar - Daily Goal */}
                 <div className="space-y-6">
-                    <div className="bg-primary text-white p-6 rounded-3xl shadow-xl shadow-primary/20 relative overflow-hidden">
-                        <div className="relative z-10">
-                            <h3 className="text-lg font-bold mb-1">Daily Goal</h3>
-                            <p className="text-white/80 text-sm mb-6">You're doing great! Keep it up.</p>
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                        <h3 className="text-lg font-bold text-secondary-dark mb-1">Daily Goal</h3>
+                        <p className="text-sm text-secondary mb-6">{selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}'s Progress</p>
 
-                            <div className="flex items-end gap-2 mb-2">
-                                <span className="text-4xl font-bold">
-                                    {(tasks.filter(t => t.status === 'completed').reduce((acc, t) => acc + t.duration_minutes, 0) / 60).toFixed(1)}
-                                </span>
-                                <span className="text-lg opacity-80 mb-1">/ 6 hrs</span>
-                            </div>
-                            <div className="h-2 bg-black/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-white w-[75%] rounded-full"></div>
-                            </div>
+                        <div className="flex items-end gap-2 mb-2">
+                            <span className="text-4xl font-bold text-primary">{tasks.filter(t => t.status === 'completed').length}</span>
+                            <span className="text-lg text-secondary-light font-medium mb-1">/ {tasks.length} tasks</span>
                         </div>
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+
+                        <div className="w-full h-3 bg-secondary-light/10 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                                style={{ width: `${tasks.length === 0 ? 0 : Math.round((tasks.filter(t => t.status === 'completed').length / tasks.length) * 100)}%` }}
+                            ></div>
+                        </div>
+
+                        <p className="text-xs text-secondary mt-4 flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-warning" />
+                            {tasks.filter(t => t.status === 'completed').length === tasks.length && tasks.length > 0
+                                ? "All caught up! Great job!"
+                                : "Keep going, you're doing great!"}
+                        </p>
                     </div>
+                </div>
 
-                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20">
-                        <h3 className="text-lg font-bold text-secondary-dark mb-4">Upcoming Exams</h3>
-                        <div className="space-y-4">
-                            {upcomingExams.length === 0 ? (
-                                <p className="text-sm text-secondary text-center py-4">No upcoming exams scheduled.</p>
-                            ) : (
-                                upcomingExams.map((exam, i) => {
-                                    const examDate = new Date(exam.date);
-                                    const today = new Date();
+                <CreateTaskModal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onTaskCreated={() => { fetchTasks(); fetchCalendarRange(); }}
+                    selectedDate={selectedDate}
+                />
 
-                                    // Reset hours to compare dates properly
-                                    const examDateOnly = new Date(examDate); examDateOnly.setHours(0, 0, 0, 0);
-                                    const todayOnly = new Date(today); todayOnly.setHours(0, 0, 0, 0);
+                <GeneratePlanModal
+                    isOpen={isAIModalOpen}
+                    onClose={() => setIsAIModalOpen(false)}
+                    onPlanGenerated={() => { fetchTasks(); fetchCalendarRange(); }}
+                    energyPreference={userEnergyPref}
+                />
 
-                                    const diffTime = examDateOnly.getTime() - todayOnly.getTime();
-                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                <EnergyPreferenceModal
+                    isOpen={isEnergyModalOpen}
+                    onClose={() => setIsEnergyModalOpen(false)}
+                    onSelect={handleEnergySelect}
+                />
 
-                                    let daysLeft = "";
-                                    if (diffDays === 0) daysLeft = "Today";
-                                    else if (diffDays === 1) daysLeft = "Tomorrow";
-                                    else daysLeft = `${diffDays} days left`;
+                <EnergyPreferenceModal
+                    isOpen={isPeakHourModalOpen}
+                    onClose={() => setIsPeakHourModalOpen(false)}
+                    onSelect={handlePeakHourUpdate}
+                    title="Choose your Peak Study Hour"
+                    selectedPreference={userEnergyPref}
+                />
+                {
+                    isOptimizing && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
+                            >
+                                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
+                                    <Sparkles className="w-8 h-8 animate-pulse" />
+                                </div>
+                                <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
+                                <p className="text-secondary text-center mb-6">
+                                    Optimizing your study plan for your peak hours...
+                                </p>
+                                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                            </motion.div>
+                        </div>
+                    )
+                }
 
-                                    return (
-                                        <div key={i} className="group relative flex items-center gap-4 p-3 rounded-xl hover:bg-background transition-colors border border-transparent hover:border-secondary-light/10">
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-error/5 to-error/10 flex flex-col items-center justify-center text-error border border-error/10">
-                                                <span className="text-xs font-bold uppercase">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                                <span className="text-lg font-bold leading-none">{examDate.getDate()}</span>
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="font-bold text-secondary-dark text-sm">{exam.title}</h4>
-                                                <p className="text-xs text-secondary">{examDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric' })}</p>
-                                            </div>
-                                            <span className={`text-xs font-medium px-2 py-1 rounded-md ${diffDays <= 3 ? 'text-error bg-error/10' : 'text-primary bg-primary/5'
-                                                }`}>
-                                                {daysLeft}
-                                            </span>
 
-                                            {/* Delete Button - visible on hover */}
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteExam(exam.id); }}
-                                                className="absolute top-2 right-2 p-1.5 bg-white text-secondary-light hover:text-error hover:bg-error/5 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all transform scale-90 hover:scale-100"
-                                                title="Delete Exam and Tasks"
-                                            >
-                                                <MinusCircle className="w-4 h-4" />
-                                            </button>
+
+                {/* Toast Notification */}
+                {
+                    toast && (
+                        <Toast
+                            message={toast.message}
+                            type={toast.type}
+                            onClose={() => setToast(null)}
+                        />
+                    )
+                }
+
+                {/* Delete Confirmation Modal (Task) */}
+                {
+                    taskToDelete && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                            >
+                                <div className="p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                            <Trash2 className="w-6 h-6" />
                                         </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
+                                        <button
+                                            onClick={() => setTaskToDelete(null)}
+                                            className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    </div>
 
-            <CreateTaskModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onTaskCreated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
-                selectedDate={selectedDate}
-            />
+                                    <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
+                                    <p className="text-secondary mb-6">
+                                        Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
+                                        This action cannot be undone.
+                                    </p>
 
-            <GeneratePlanModal
-                isOpen={isAIModalOpen}
-                onClose={() => setIsAIModalOpen(false)}
-                onPlanGenerated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
-                energyPreference={userEnergyPref}
-            />
-
-            <EnergyPreferenceModal
-                isOpen={isEnergyModalOpen}
-                onClose={() => setIsEnergyModalOpen(false)}
-                onSelect={handleEnergySelect}
-            />
-
-            <EnergyPreferenceModal
-                isOpen={isPeakHourModalOpen}
-                onClose={() => setIsPeakHourModalOpen(false)}
-                onSelect={handlePeakHourUpdate}
-                title="Choose your Peak Study Hour"
-                selectedPreference={userEnergyPref}
-            />
-            {isOptimizing && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
-                    >
-                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
-                            <Sparkles className="w-8 h-8 animate-pulse" />
-                        </div>
-                        <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
-                        <p className="text-secondary text-center mb-6">
-                            Optimizing your study plan for your peak hours...
-                        </p>
-                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                    </motion.div>
-                </div>
-            )}
-
-            {/* Blocking Delete Modal */}
-            {isDeleting && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
-                    >
-                        <div className="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mb-6 text-error">
-                            <Loader2 className="w-8 h-8 animate-spin" />
-                        </div>
-                        <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Deleting Exam</h3>
-                        <p className="text-secondary text-center">
-                            Deleting your exam and associated study schedule. Please wait...
-                        </p>
-                    </motion.div>
-                </div>
-            )}
-
-            {/* Toast Notification */}
-            {toast && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={() => setToast(null)}
-                />
-            )}
-
-            {/* Delete Confirmation Modal (Task) */}
-            {taskToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
-                    >
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
-                                    <Trash2 className="w-6 h-6" />
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setTaskToDelete(null)}
+                                            className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleDeleteTask}
+                                            className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                        >
+                                            Delete Task
+                                        </button>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={() => setTaskToDelete(null)}
-                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
-                            <p className="text-secondary mb-6">
-                                Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
-                                This action cannot be undone.
-                            </p>
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setTaskToDelete(null)}
-                                    className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleDeleteTask}
-                                    className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
-                                >
-                                    Delete Task
-                                </button>
-                            </div>
+                            </motion.div>
                         </div>
-                    </motion.div>
-                </div>
-            )}
+                    )
+                }
 
-            {/* Delete Confirmation Modal (Exam) */}
-            {examToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
-                    >
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
-                                    <Trash2 className="w-6 h-6" />
-                                </div>
-                                <button
-                                    onClick={() => setExamToDelete(null)}
-                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
 
-                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this Exam?</h3>
-                            <p className="text-secondary mb-4">
-                                Are you sure you want to delete <span className="font-bold text-secondary-dark">"{examToDelete.title}"</span>?
-                            </p>
-                            <div className="bg-error/5 border border-error/10 rounded-xl p-3 mb-6 flex gap-3 text-error text-sm">
-                                <AlertTriangle className="w-5 h-5 shrink-0" />
-                                <p><strong>Warning:</strong> This will also delete the entire study schedule linked to this exam.</p>
-                            </div>
+                {/* Reschedule Modal */}
+                {
+                    taskToReschedule && (
+                        <RescheduleModal
+                            task={taskToReschedule}
+                            onClose={() => setTaskToReschedule(null)}
+                            onSave={handleRescheduleSave}
+                        />
+                    )
+                }
 
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setExamToDelete(null)}
-                                    className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={confirmDeleteExam}
-                                    className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
-                                >
-                                    Delete Exam & Schedule
-                                </button>
-                            </div>
-                        </div>
-                    </motion.div>
-                </div>
-            )}
-            {/* Reschedule Modal */}
-            {taskToReschedule && (
-                <RescheduleModal
-                    task={taskToReschedule}
-                    onClose={() => setTaskToReschedule(null)}
-                    onSave={handleRescheduleSave}
-                />
-            )}
-
-            {/* AI Reschedule Suggestion Modal */}
-            {(taskToRescheduleAI || isFetchingAI) && (
-                <RescheduleAIModal
-                    task={taskToRescheduleAI}
-                    suggestions={aiSuggestions}
-                    isLoading={isFetchingAI}
-                    onClose={() => {
-                        setTaskToRescheduleAI(null);
-                        setAiSuggestions([]);
-                    }}
-                    onSelect={handleApplyAISuggestion}
-                />
-            )}
-        </div>
+                {/* AI Reschedule Suggestion Modal */}
+                {
+                    (taskToRescheduleAI || isFetchingAI) && (
+                        <RescheduleAIModal
+                            task={taskToRescheduleAI}
+                            suggestions={aiSuggestions}
+                            isLoading={isFetchingAI}
+                            onClose={() => {
+                                setTaskToRescheduleAI(null);
+                                setAiSuggestions([]);
+                            }}
+                            onSelect={handleApplyAISuggestion}
+                        />
+                    )
+                }
+            </div >
+        </div >
     );
 };
 
 // Inline Reschedule Modal Component
-const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: () => void, onSave: (data: any) => void }) => {
+function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: () => void, onSave: (data: any) => void }) {
     // Initialize state with task values
     // Date handling: existing start_time is ISO string. 
     const taskDate = new Date(task.start_time);
@@ -961,7 +806,7 @@ const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: 
 };
 
 // AI Reschedule Modal
-const RescheduleAIModal = ({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) => {
+function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <motion.div
