@@ -43,6 +43,7 @@ interface StudyPlannerContextType {
     ensureDataLoaded: () => Promise<void>;
     // Optimistic Update Helpers
     updateTask: (updatedTask: StudyTask) => void;
+    updateTasksBulk: (updatedTasks: StudyTask[]) => void;
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
     setUserEnergyPref: (pref: string) => void;
@@ -59,17 +60,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
-    // Fetch User Preferences
-    const fetchUserPref = async () => {
-        try {
-            const response = await api.get('/api/users/me');
-            if (response.data.energy_preference) {
-                setUserEnergyPref(response.data.energy_preference);
-            }
-        } catch (error) {
-            console.error("Error fetching user profile:", error);
-        }
-    };
+    // userEnergyPref is now handled purely at runtime
+    // Removing fetchUserPref logic and setting initial state to null
 
     // Calculate Calendar Range from Tasks
     const calculateCalendarRange = (tasks: StudyTask[]) => {
@@ -112,10 +104,10 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const fetchData = async () => {
+        if (!user) return; // Prevent fetching if no user session exists
         setIsLoading(true);
         try {
-            // 1. Fetch Preferences
-            await fetchUserPref();
+            // 1. Preferences are now runtime-only, skipping redundant profile fetch
 
             // 2. Fetch ALL Tasks (No date range filters)
             const tasksRes = await api.get('/api/study-planner/tasks');
@@ -172,6 +164,16 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setAllTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
     };
 
+    const updateTasksBulk = (updatedTasks: StudyTask[]) => {
+        const updatedIds = new Set(updatedTasks.map(t => t.id));
+        setAllTasks(prev => prev.map(t => {
+            if (updatedIds.has(t.id)) {
+                return updatedTasks.find(ut => ut.id === t.id) || t;
+            }
+            return t;
+        }));
+    };
+
     const deleteTask = (taskId: number) => {
         setAllTasks(prev => prev.filter(t => t.id !== taskId));
     };
@@ -203,6 +205,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             refreshData,
             ensureDataLoaded,
             updateTask,
+            updateTasksBulk,
             deleteTask,
             addTask,
             setUserEnergyPref

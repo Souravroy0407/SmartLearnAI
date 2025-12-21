@@ -21,6 +21,7 @@ const StudyPlanner = () => {
         refreshData,
         ensureDataLoaded,
         updateTask: contextUpdateTask,
+        updateTasksBulk: contextUpdateTasksBulk,
         deleteTask: contextDeleteTask
     } = useStudyPlanner();
 
@@ -90,17 +91,96 @@ const StudyPlanner = () => {
         setIsAIModalOpen(true);
     };
 
-    const handlePeakHourUpdate = async (preference: any) => {
+    const handlePeakHourUpdate = async (preference: string) => {
         try {
             setIsOptimizing(true);
-            await api.post('/api/study-planner/reoptimize', null, {
-                params: { energy_preference: preference }
+
+            // Artificial delay for smooth UX
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+            // 1. Define Standard Windows (Priority-based)
+            const windows: Record<string, { start: number, end: number }> = {
+                'Morning': { start: 6, end: 10 },
+                'Afternoon': { start: 12, end: 16 },
+                'Night': { start: 19, end: 23 }
+            };
+
+            const selectedWindow = windows[preference] || windows['Morning'];
+
+            // 2. Filter and Sort Daily Tasks
+            const sortedTasks = [...dailyTasks].sort((a, b) =>
+                new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+            );
+
+            if (sortedTasks.length === 0) {
+                showToast("No tasks to reschedule for today.", "info");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
+            // 3. Calculate Global Requirements
+            const bufferMinutes = 15;
+            const totalRequiredMinutes = sortedTasks.reduce((acc, t, idx) => {
+                const buffer = idx === sortedTasks.length - 1 ? 0 : bufferMinutes;
+                return acc + t.duration_minutes + buffer;
+            }, 0);
+
+            // Sanity Check: If total tasks > 19 hours, it won't fit in any day
+            if (totalRequiredMinutes > 1140) {
+                showToast("Too many tasks for a single day.", "error");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
+            // 4. Initial Start Time Determination (HARD PRIORITY: Window Start)
+            const peakStart = new Date(selectedDate);
+            peakStart.setHours(selectedWindow.start, 0, 0, 0);
+
+            const peakEnd = new Date(selectedDate);
+            peakEnd.setHours(selectedWindow.end, 0, 0, 0);
+
+            // 5. Two-Phase Allocation Loop
+            const updatedTasks: StudyTask[] = [];
+            let currentPointer = new Date(peakStart);
+            let isInOverflow = false;
+
+            sortedTasks.forEach(task => {
+                const taskDurationMs = task.duration_minutes * 60000;
+
+                // Check if task fits in peak window (including buffer check)
+                if (!isInOverflow && (currentPointer.getTime() + taskDurationMs) <= peakEnd.getTime()) {
+                    // Phase 1: Peak Allocation
+                    updatedTasks.push({
+                        ...task,
+                        start_time: currentPointer.toISOString(),
+                        color: 'bg-warning' // Peak highlight
+                    });
+                    currentPointer = new Date(currentPointer.getTime() + (task.duration_minutes + bufferMinutes) * 60000);
+                } else {
+                    // Phase 2: Overflow Allocation
+                    if (!isInOverflow) {
+                        // First overflow task starts exactly at window end
+                        currentPointer = new Date(peakEnd);
+                        isInOverflow = true;
+                    }
+
+                    updatedTasks.push({
+                        ...task,
+                        start_time: currentPointer.toISOString(),
+                        color: 'bg-primary' // Standard overflow color
+                    });
+                    currentPointer = new Date(currentPointer.getTime() + (task.duration_minutes + bufferMinutes) * 60000);
+                }
             });
-            // Refresh Global Data
-            await refreshData();
+
+            // 6. Batch Update Context
+            contextUpdateTasksBulk(updatedTasks);
+            showToast(`Schedule optimized for ${preference}!`, "success");
             setIsPeakHourModalOpen(false);
+
         } catch (error) {
-            console.error("Failed to reoptimize:", error);
+            console.error("Advanced scheduling failed:", error);
+            showToast("Failed to optimize schedule.", "error");
         } finally {
             setIsOptimizing(false);
         }
@@ -228,27 +308,20 @@ const StudyPlanner = () => {
                     <h1 className="text-3xl font-bold text-secondary-dark mb-2">Smart Study Planner</h1>
                     <p className="text-secondary">Your AI-generated schedule for maximum productivity.</p>
                 </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setIsPeakHourModalOpen(true)}
-                        className="flex items-center gap-2 bg-white text-secondary-dark border border-secondary-light/30 px-4 py-2.5 rounded-xl font-medium hover:bg-secondary-light/10 transition-colors"
-                    >
-                        <Clock className="w-5 h-5 text-primary" />
-                        Choose Peak Hour
-                    </button>
+                <div className="flex flex-wrap gap-3">
                     <button
                         onClick={handleGenerateClick}
-                        className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-pink-600 text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-pink-500/20"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
                     >
                         <Sparkles className="w-5 h-5" />
-                        Generate with AI
+                        Generate Plan
                     </button>
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="flex items-center gap-2 bg-white text-secondary-dark border border-secondary-light/30 px-5 py-2.5 rounded-xl font-medium hover:bg-secondary-light/10 transition-colors"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-white text-secondary-dark px-6 py-4 rounded-2xl font-bold border-2 border-secondary-light/20 hover:border-primary/30 active:scale-[0.98] transition-all"
                     >
                         <Plus className="w-5 h-5" />
-                        Add Custom Task
+                        Custom Task
                     </button>
                 </div>
             </div>
@@ -314,14 +387,23 @@ const StudyPlanner = () => {
                             <h3 className="text-lg font-bold text-secondary-dark">
                                 Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                             </h3>
-                            <button
-                                onClick={handleRefresh}
-                                className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
-                                disabled={isGlobalLoading}
-                                title="Refresh Schedule"
-                            >
-                                <RotateCw className={`w-5 h-5 ${isGlobalLoading ? 'animate-spin' : ''}`} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setIsPeakHourModalOpen(true)}
+                                    className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                                    title="Adjust Peak Hours"
+                                >
+                                    <Clock className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={handleRefresh}
+                                    className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                                    disabled={isGlobalLoading}
+                                    title="Refresh Schedule"
+                                >
+                                    <RotateCw className={`w-5 h-5 ${isGlobalLoading ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
                         </div>
 
                         {isGlobalLoading && !dailyTasks.length ? (

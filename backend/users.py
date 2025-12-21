@@ -24,7 +24,6 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     avatar_url: Optional[str] = None
-    energy_preference: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -128,7 +127,6 @@ def read_user_me(current_user: User = Depends(get_current_user), db: Session = D
         student_profile = db.query(Student).filter(Student.user_id == current_user.id).first()
         if student_profile:
             response_data = TeacherResponse.model_validate(current_user)
-            response_data.energy_preference = student_profile.energy_preference
             response_data.full_name = student_profile.full_name or current_user.full_name
             return response_data
             

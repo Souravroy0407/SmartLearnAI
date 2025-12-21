@@ -255,14 +255,8 @@ def generate_study_plan(
     if not current_user.student_profile:
         raise HTTPException(status_code=400, detail="User must have a student profile")
     
-    # 1. Update Energy Preference if provided
-    if request.energy_preference:
-        current_user.student_profile.energy_preference = request.energy_preference
-        db.commit()
-        db.refresh(current_user.student_profile) # Refresh profile
-    
-    # Use stored preference if not provided in request
-    user_energy_pref = current_user.student_profile.energy_preference or "balanced"
+    # 1. Energy Preference Hint (Runtime only)
+    user_energy_pref = request.energy_preference or "balanced"
 
     # 2. Add Exam Event as a StudyTask
     exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
@@ -480,9 +474,9 @@ def reoptimize_study_plan(
     if not current_user.student_profile:
         raise HTTPException(status_code=400, detail="User must have a student profile")
 
-    # 1. Update Preference
-    current_user.student_profile.energy_preference = energy_preference
-    db.commit()
+    # 1. Preference check
+    if not energy_preference:
+         raise HTTPException(status_code=400, detail="Energy preference is required")
     
     # 2. Get Pending Tasks
     tasks = db.query(StudyTask).filter(
@@ -557,9 +551,11 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
     is_hard = any(k in task.task_type.lower() or k in task.title.lower() for k in hard_keywords)
     
     # 2. Peak Hours Logic
-    pref = (user.energy_preference or "balanced").lower() # Fallback to User if Student pref missing, or use student
-    if user.student_profile and user.student_profile.energy_preference:
-        pref = user.student_profile.energy_preference.lower()
+    pref = "balanced"
+    if user.student_profile:
+        # We no longer store energy_preference in the DB.
+        # This fallback is for safety if other profile attributes were used.
+        pass
 
     # Define hour blocks (4-hour windows)
     morning_slots = [6, 7, 8, 9]
@@ -650,9 +646,7 @@ def get_gemini_suggestions(task: StudyTask, db: Session, user: User) -> List[Res
     
     tasks_context = [{"title": t.title, "start": t.start_time.isoformat(), "duration": t.duration_minutes} for t in other_tasks]
     
-    pref = user.energy_preference or 'balanced'
-    if user.student_profile and user.student_profile.energy_preference:
-        pref = user.student_profile.energy_preference
+    pref = 'balanced'
 
     prompt = f"""
     You are a study assistant. Suggest 3 alternative time slots for this study task:
