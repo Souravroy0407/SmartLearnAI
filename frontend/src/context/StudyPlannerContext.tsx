@@ -2,6 +2,16 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import api from '../api/axios';
 import { useAuth } from './AuthContext';
 
+const toTitleCase = (str: string) => {
+    if (!str) return str;
+    return str
+        .toLowerCase()
+        .split(' ')
+        .filter(word => word.length > 0)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+};
+
 // Types (Moved from StudyPlanner.tsx)
 export interface StudyTask {
     id: number;
@@ -111,7 +121,10 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
 
             // 2. Fetch ALL Tasks (No date range filters)
             const tasksRes = await api.get('/api/study-planner/tasks');
-            const tasks: StudyTask[] = tasksRes.data;
+            const tasks: StudyTask[] = (tasksRes.data as StudyTask[]).map(t => ({
+                ...t,
+                title: toTitleCase(t.title)
+            }));
             setAllTasks(tasks);
             calculateCalendarRange(tasks);
 
@@ -161,14 +174,16 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const updateTask = (updatedTask: StudyTask) => {
-        setAllTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+        const normalizedTask = { ...updatedTask, title: toTitleCase(updatedTask.title) };
+        setAllTasks(prev => prev.map(t => t.id === normalizedTask.id ? normalizedTask : t));
     };
 
     const updateTasksBulk = (updatedTasks: StudyTask[]) => {
-        const updatedIds = new Set(updatedTasks.map(t => t.id));
+        const normalizedTasks = updatedTasks.map(t => ({ ...t, title: toTitleCase(t.title) }));
+        const updatedIds = new Set(normalizedTasks.map(t => t.id));
         setAllTasks(prev => prev.map(t => {
             if (updatedIds.has(t.id)) {
-                return updatedTasks.find(ut => ut.id === t.id) || t;
+                return normalizedTasks.find(ut => ut.id === t.id) || t;
             }
             return t;
         }));
@@ -179,7 +194,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const addTask = (newTask: StudyTask) => {
-        setAllTasks(prev => [...prev, newTask]);
+        const normalizedTask = { ...newTask, title: toTitleCase(newTask.title) };
+        setAllTasks(prev => [...prev, normalizedTask]);
     };
 
     // Reset on logout (if user becomes null)
