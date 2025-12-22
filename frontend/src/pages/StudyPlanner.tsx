@@ -6,7 +6,7 @@ import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
 import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
 import Toast, { type ToastType } from '../components/Toast';
-import { useStudyPlanner, type StudyTask, type ExamResponse } from '../context/StudyPlannerContext';
+import { useStudyPlanner, type StudyTask } from '../context/StudyPlannerContext';
 
 
 
@@ -22,7 +22,8 @@ const StudyPlanner = () => {
         ensureDataLoaded,
         updateTask: contextUpdateTask,
         updateTasksBulk: contextUpdateTasksBulk,
-        deleteTask: contextDeleteTask
+        deleteTask: contextDeleteTask,
+        setUserEnergyPref
     } = useStudyPlanner();
 
     // Local UI State
@@ -85,8 +86,7 @@ const StudyPlanner = () => {
     };
 
     const handleEnergySelect = (preference: any) => {
-        // Modal will likely trigger a refresh or we can set it via specialized setter if context had one.
-        // For now, since it updates the database, we rely on the refreshData after generation.
+        setUserEnergyPref(preference);
         setIsEnergyModalOpen(false);
         setIsAIModalOpen(true);
     };
@@ -98,14 +98,15 @@ const StudyPlanner = () => {
             // Artificial delay for smooth UX
             await new Promise(resolve => setTimeout(resolve, 600));
 
-            // 1. Define Standard Windows (Priority-based)
+            // 1. Define Standard Windows (Priority-based, lowercase keys for matching)
             const windows: Record<string, { start: number, end: number }> = {
-                'Morning': { start: 6, end: 10 },
-                'Afternoon': { start: 12, end: 16 },
-                'Night': { start: 19, end: 23 }
+                'morning': { start: 6, end: 10 },
+                'afternoon': { start: 12, end: 16 },
+                'night': { start: 19, end: 23 }
             };
 
-            const selectedWindow = windows[preference] || windows['Morning'];
+            const normalizedPref = preference.toLowerCase();
+            const selectedWindow = windows[normalizedPref] || windows['morning'];
 
             // 2. Filter and Sort Daily Tasks
             const sortedTasks = [...dailyTasks].sort((a, b) =>
@@ -175,6 +176,7 @@ const StudyPlanner = () => {
 
             // 6. Batch Update Context
             contextUpdateTasksBulk(updatedTasks);
+            setUserEnergyPref(preference);
             showToast(`Schedule optimized for ${preference}!`, "success");
             setIsPeakHourModalOpen(false);
 
