@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { X, Sparkles, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Sparkles, Loader2 } from 'lucide-react';
 import Modal from './Modal';
 import api from '../api/axios';
 
@@ -14,6 +13,7 @@ interface GeneratePlanModalProps {
 const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference }: GeneratePlanModalProps) => {
     const [subject, setSubject] = useState('');
     const [topics, setTopics] = useState('');
+    const [startDate, setStartDate] = useState('');
     const [examDate, setExamDate] = useState('');
     const [hoursPerDay, setHoursPerDay] = useState(2);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -28,6 +28,7 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference 
             await api.post('/api/study-planner/generate', {
                 subject,
                 topics,
+                start_date: startDate,
                 exam_date: examDate,
                 hours_per_day: Number(hoursPerDay),
                 energy_preference: energyPreference
@@ -46,9 +47,47 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference 
         }
     };
 
+    const footer = (
+        <div className="flex justify-end gap-3">
+            <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-secondary font-medium hover:bg-secondary-light/10 rounded-xl transition-colors"
+                disabled={isGenerating}
+            >
+                Cancel
+            </button>
+            <button
+                type="submit"
+                form="generate-plan-form"
+                disabled={isGenerating}
+                className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-2 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-70"
+            >
+                {isGenerating ? (
+                    <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Generating...
+                    </>
+                ) : (
+                    <>
+                        <Sparkles className="w-5 h-5" />
+                        Generate Plan
+                    </>
+                )}
+            </button>
+        </div>
+    );
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Generate AI Study Plan">
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <Modal isOpen={isOpen} onClose={onClose} title="Generate AI Study Plan" footer={footer}>
+            <form id="generate-plan-form" onSubmit={(e) => {
+                if (startDate && examDate && startDate >= examDate) {
+                    e.preventDefault();
+                    setError("Start Date must be before Exam Date");
+                    return;
+                }
+                handleSubmit(e);
+            }} className="space-y-4">
                 <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 flex items-start gap-3">
                     <Sparkles className="w-5 h-5 text-primary mt-0.5 shrink-0" />
                     <p className="text-sm text-secondary-dark leading-relaxed">
@@ -87,12 +126,27 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference 
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
+                        <label className="block text-sm font-medium text-secondary-dark mb-1">Start Date</label>
+                        <input
+                            type="date"
+                            required
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]} // Optional: Prevent past dates
+                            className="w-full px-4 py-2 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
                         <label className="block text-sm font-medium text-secondary-dark mb-1">Exam Date</label>
                         <input
                             type="date"
                             required
                             value={examDate}
                             onChange={(e) => setExamDate(e.target.value)}
+                            min={startDate || new Date().toISOString().split('T')[0]}
                             className="w-full px-4 py-2 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
                         />
                     </div>
@@ -111,33 +165,6 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, energyPreference 
                     </div>
                 </div>
 
-                <div className="pt-2 flex justify-end gap-3">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 text-secondary font-medium hover:bg-secondary-light/10 rounded-xl transition-colors"
-                        disabled={isGenerating}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        disabled={isGenerating}
-                        className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-2 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-70"
-                    >
-                        {isGenerating ? (
-                            <>
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                                Generating...
-                            </>
-                        ) : (
-                            <>
-                                <Sparkles className="w-5 h-5" />
-                                Generate Plan
-                            </>
-                        )}
-                    </button>
-                </div>
             </form>
         </Modal>
     );

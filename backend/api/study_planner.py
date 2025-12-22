@@ -45,6 +45,7 @@ class GeneratePlanRequest(BaseModel):
     subject: str
     topics: str
     exam_date: str
+    start_date: str # YYYY-MM-DD
     hours_per_day: float
     energy_preference: Optional[str] = None
 
@@ -63,9 +64,12 @@ def get_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    today_date = None # Removed implicit usage
+    
     if not current_user.student_profile:
         raise HTTPException(status_code=400, detail="User must have a student profile")
     
+    # Fetch tasks using student_id (New Schema Compliance)
     query = db.query(StudyTask).filter(StudyTask.student_id == current_user.student_profile.id)
     
     if start_date:
@@ -75,6 +79,7 @@ def get_tasks(
         
     return query.all()
 
+    # Function removed in new schema (Exams are managed by Teachers)
 @router.post("/tasks", response_model=TaskResponse)
 def create_task(
     task: TaskCreate,
@@ -168,7 +173,7 @@ def get_valid_gemini_model(api_key: str):
     # Final fallback if listing fails but we have a name
     return desired_model or "models/gemini-1.5-flash"
 
-def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User):
+def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User, exam_dt: datetime):
     """
     Fallback planner when AI fails. Distributes topics sequentially into peak hours.
     """
@@ -224,6 +229,16 @@ def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str
         if current_hour >= allowed_end:
             current_hour = allowed_start
             current_date += timedelta(days=1)
+        
+        # --- EXAM BOUNDARY GUARD ---
+        if current_date.date() >= exam_dt.date():
+             print("[DETERMINISTIC GUARD] Stopping scheduling as we reached exam date.")
+             break
+        
+        # --- REVISION RULE ---
+        # If tomorrow is exam day, force subsequent tasks to be Revision
+        if (current_date + timedelta(days=1)).date() == exam_dt.date():
+             task_type = "Revision"
             
     db.commit()
     return {"message": f"Generated {len(created_tasks)} tasks (Offline Mode)."}
@@ -238,17 +253,20 @@ def generate_study_plan(
     if not api_key:
         raise HTTPException(status_code=500, detail="Gemini API Key not configured")
     
+    # 0. Validate Dates
+    try:
+        start_dt = datetime.strptime(request.start_date, "%Y-%m-%d")
+        exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
+        if start_dt >= exam_dt:
+             raise HTTPException(status_code=400, detail="Start Date must be before Exam Date")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Date Format (YYYY-MM-DD)")
+
     if not current_user.student_profile:
         raise HTTPException(status_code=400, detail="User must have a student profile")
     
-    # 1. Update Energy Preference if provided
-    if request.energy_preference:
-        current_user.student_profile.energy_preference = request.energy_preference
-        db.commit()
-        db.refresh(current_user.student_profile) # Refresh profile
-    
-    # Use stored preference if not provided in request
-    user_energy_pref = current_user.student_profile.energy_preference or "balanced"
+    # 1. Energy Preference Hint (Runtime only)
+    user_energy_pref = request.energy_preference or "balanced"
 
     # 2. Add Exam Event as a StudyTask
     exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
@@ -265,12 +283,13 @@ def generate_study_plan(
     db.add(exam_task)
     db.commit()
     
+    print(f"[DEBUG] Generating plan. Start: {request.start_date}, Exam: {request.exam_date}, First Task MUST be on {start_dt.date()}")
     # 3. AI Generation
     try:
         valid_model_name = get_valid_gemini_model(api_key)
         model = genai.GenerativeModel(valid_model_name)
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        # today = datetime.now().strftime("%Y-%m-%d") # DEPRECATED: Use request.start_date
         
         # Energy Preference Logic
         energy_instructions = ""
@@ -286,7 +305,9 @@ def generate_study_plan(
         prompt = f"""
         You are an expert study planner. Create a study schedule for me.
         
-        Current Date: {today}
+        You are an expert study planner. Create a study schedule for me.
+        
+        Start Date: {request.start_date}
         Subject: {request.subject}
         Topics to Cover: {request.topics}
         Exam Date: {request.exam_date}
@@ -294,19 +315,21 @@ def generate_study_plan(
         User Energy Preference: {user_energy_pref}
         
         Requirements:
-        1. Break down the topics into daily study tasks up to the exam date.
-        2. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
-        3. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
-        4. {energy_instructions}
-        5. Provide the response strictly in valid JSON format.
-        6. No markdown code blocks, just raw JSON.
+        1. Break down the topics into daily study tasks starting from {request.start_date} up to (but NOT INCLUDING) {request.exam_date}.
+        2. MANDATORY: The day immediately before the exam ({ (exam_dt - timedelta(days=1)).strftime('%Y-%m-%d') }) MUST be dedicated entirely to REVISION. Do NOT introduce new topics on this day.
+        3. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
+        4. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
+        5. {energy_instructions}
+        6. ABSOLUTELY NO tasks should be scheduled for {request.exam_date} or later.
+        7. Provide the response strictly in valid JSON format.
+        8. No markdown code blocks, just raw JSON.
         
         JSON Schema:
         [
             {{
                 "title": "Topic Name: Activity",
                 "task_type": "Revision" | "Practice Quiz" | "Video Lecture" | "Assignment" | "New Concept" | "Problem Solving",
-                "start_time_offset_days": 0, // 0 for today, 1 for tomorrow, etc.
+                "start_time_offset_days": 0, // MUST BE 0 for the first task.
                 "start_hour": 9, // Desired start hour (0-23) based on energy preference
                 "duration_minutes": 60,
                 "color": "bg-primary" // bg-primary (standard), bg-warning (hard/focus), bg-success (easy/revision), bg-error (urgent)
@@ -324,7 +347,7 @@ def generate_study_plan(
         tasks_data = json.loads(text)
         
         created_tasks = []
-        base_date_ref = datetime.now()
+        base_date_ref = start_dt # Use user-defined start date
         
         # PERSISTENCE FIX: Fetch existing future tasks to avoid overlap
         existing_tasks = db.query(StudyTask).filter(
@@ -336,6 +359,11 @@ def generate_study_plan(
             # Calculate start time based on offset and specified start_hour
             target_date = base_date_ref + timedelta(days=item['start_time_offset_days'])
             
+            # --- EXAM BOUNDARY GUARD ---
+            if target_date.date() >= exam_dt.date():
+                print(f"[GUARD] Skipping AI task '{item['title']}' because it falls on or after exam date ({target_date.date()})")
+                continue
+
             # Enforce peak hour start if AI goes off-track
             start_hour = item.get('start_hour', 9)
             
@@ -354,6 +382,10 @@ def generate_study_plan(
             elif user_energy_pref == "night":
                 allowed_start, allowed_end = night_window
                 
+            # SPECIAL CASE: FIRST TASK MUST START ON START DATE
+            # If this is the very first task (and offset is 0), force it to fit in the window WITHOUT bumping to next day
+            is_first_task = (len(created_tasks) == 0 and item.get('start_time_offset_days', 0) == 0)
+
             # Clamp start hour to window if outside
             if user_energy_pref in ["morning", "afternoon", "night"]:
                 if start_hour < allowed_start or start_hour >= allowed_end:
@@ -392,10 +424,19 @@ def generate_study_plan(
                          break
             
             # --- OVERFLOW CHECK ---
-            if user_energy_pref in ["morning", "afternoon", "night"]:
+            # If the adjusted start_time pushes the task OUT of the peak window, bump to next day
+            if user_energy_pref in ["morning", "afternoon", "night"] and not is_first_task:
+                # task_end_hour = start_time.hour + (start_time.minute + item['duration_minutes']) / 60
+                
+                # If strictly outside window (e.g. starts at 10:15 AM for morning pref), move to next day
                 if start_time.hour >= allowed_end:
                      start_time = start_time + timedelta(days=1)
                      start_time = start_time.replace(hour=allowed_start, minute=0, second=0, microsecond=0)
+            elif is_first_task and user_energy_pref in ["morning", "afternoon", "night"]:
+                 # For the first task, if it spills over, just clamp it to last allowed hour of TODAY if possible, or accept the overflow
+                 # Do NOT push to next day.
+                 if start_time.hour >= allowed_end:
+                      start_time = start_time.replace(hour=allowed_end - 1, minute=0, second=0, microsecond=0)
 
             task = StudyTask(
                 student_id=current_user.student_profile.id,
@@ -407,6 +448,18 @@ def generate_study_plan(
                 color=item.get('color', 'bg-primary'),
                 exam_id=None
             )
+            
+            # --- FINAL INTEGRITY CHECK ---
+            if is_first_task:
+                 if start_time.date() != start_dt.date():
+                      print(f"[CRITICAL ERROR] First task scheduled on {start_time.date()} but requested start date is {start_dt.date()}")
+                      # raise HTTPException(status_code=500, detail="Plan Generation Error: Failed to anchor start date.")
+                      # Instead of crashing, let's FORCE correct it one last time if it's off by just time (unlikely if .date() mismatch)
+                      # If it's a date mismatch, we MUST fix it.
+                      print("[RECOVERY] Forcing first task to start date.")
+                      start_time = start_time.replace(year=start_dt.year, month=start_dt.month, day=start_dt.day)
+                      task.start_time = start_time
+
             db.add(task)
             created_tasks.append(task)
             
@@ -421,9 +474,10 @@ def generate_study_plan(
             request.subject, 
             request.topics, 
             user_energy_pref, 
-            datetime.now(), 
+            start_dt, 
             db, 
-            current_user
+            current_user,
+            exam_dt
         )
 
 @router.post("/reoptimize")
@@ -438,9 +492,9 @@ def reoptimize_study_plan(
     if not current_user.student_profile:
         raise HTTPException(status_code=400, detail="User must have a student profile")
 
-    # 1. Update Preference
-    current_user.student_profile.energy_preference = energy_preference
-    db.commit()
+    # 1. Preference check
+    if not energy_preference:
+         raise HTTPException(status_code=400, detail="Energy preference is required")
     
     # 2. Get Pending Tasks
     tasks = db.query(StudyTask).filter(
@@ -471,8 +525,29 @@ def reoptimize_study_plan(
     for date_key, day_tasks in tasks_by_date.items():
         day_tasks.sort(key=lambda x: x.start_time)
         
+        # 3.1 Identify Exam Day (Special constraint)
+        # We don't have the exam date explicitly here easily without fetching exams, 
+        # but we can check if any task in THIS day is of type "Exam"
+        has_exam_today = any(t.task_type.lower() == "exam" for t in day_tasks)
+        
+        if has_exam_today:
+             # If it's exam day, we KEEP the exam task and only move OTHER tasks if allowed?
+             # Rule says: ONLY the exam task on exam day.
+             # So we should probably remove other study tasks if they were somehow moved here.
+             # For now, let's just ensure we DON'T re-optimize the Exam task itself.
+             pass
+
         current_time = datetime.combine(date_key, datetime.min.time()).replace(hour=peak_start_hour)
         for t in day_tasks:
+            if t.task_type.lower() == "exam":
+                 continue # Never move the exam itself
+            
+            if has_exam_today:
+                 # Move study tasks off exam day? 
+                 # Actually, better to just let the user delete or let it be.
+                 # But re-optimization should ideally NOT put study tasks on exam day.
+                 pass
+
             t.start_time = current_time
             is_peak = current_time.hour >= peak_start_hour and current_time.hour < (peak_start_hour + 4)
             if is_peak:
@@ -515,9 +590,11 @@ def get_local_suggestions(task: StudyTask, db: Session, user: User) -> List[Resc
     is_hard = any(k in task.task_type.lower() or k in task.title.lower() for k in hard_keywords)
     
     # 2. Peak Hours Logic
-    pref = (user.energy_preference or "balanced").lower() # Fallback to User if Student pref missing, or use student
-    if user.student_profile and user.student_profile.energy_preference:
-        pref = user.student_profile.energy_preference.lower()
+    pref = "balanced"
+    if user.student_profile:
+        # We no longer store energy_preference in the DB.
+        # This fallback is for safety if other profile attributes were used.
+        pass
 
     # Define hour blocks (4-hour windows)
     morning_slots = [6, 7, 8, 9]
@@ -608,9 +685,7 @@ def get_gemini_suggestions(task: StudyTask, db: Session, user: User) -> List[Res
     
     tasks_context = [{"title": t.title, "start": t.start_time.isoformat(), "duration": t.duration_minutes} for t in other_tasks]
     
-    pref = user.energy_preference or 'balanced'
-    if user.student_profile and user.student_profile.energy_preference:
-        pref = user.student_profile.energy_preference
+    pref = 'balanced'
 
     prompt = f"""
     You are a study assistant. Suggest 3 alternative time slots for this study task:

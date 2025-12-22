@@ -67,8 +67,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             }
                         } catch (err) {
                             console.error("Failed to fetch user profile", err);
-                            // If 401, maybe logout? But token check passed. 
-                            // Could be network error. Keep token data as fallback.
+                            // If profile fetch fails, the session is likely invalid or schema is broken.
+                            // Logout to prevent infinite reload loops.
+                            logout();
                         }
                     }
                 } catch (error) {

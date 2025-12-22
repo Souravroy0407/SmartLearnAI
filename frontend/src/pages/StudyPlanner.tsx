@@ -1,172 +1,115 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, AlertTriangle, X, Calendar as CalendarIcon, Edit3, BrainCircuit, BookOpen, AlertCircle, ChevronLeft, Check, Edit2, RotateCcw, MinusCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
 import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
+import Toast, { type ToastType } from '../components/Toast';
+import { useStudyPlanner, type StudyTask } from '../context/StudyPlannerContext';
 
-interface StudyTask {
-    id: number;
-    title: string;
-    task_type: string;
-    start_time: string;
-    duration_minutes: number;
-    status: string;
-    color: string;
-}
 
-interface Exam {
-    id: number;
-    title: string;
-    date: string;
-}
 
 const StudyPlanner = () => {
-    // State
+    // Global State
+    const {
+        allTasks,
+        exams,
+        calendarDays,
+        userEnergyPref,
+        isLoading: isGlobalLoading,
+        refreshData,
+        ensureDataLoaded,
+        updateTask: contextUpdateTask,
+        updateTasksBulk: contextUpdateTasksBulk,
+        deleteTask: contextDeleteTask,
+        setUserEnergyPref
+    } = useStudyPlanner();
+
+    // Local UI State
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-    const [tasks, setTasks] = useState<StudyTask[]>([]);
+    const [isMuted, setIsMuted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
     const [isPeakHourModalOpen, setIsPeakHourModalOpen] = useState(false);
     const [isEnergyModalOpen, setIsEnergyModalOpen] = useState(false);
-    const [userEnergyPref, setUserEnergyPref] = useState<string | null>(null);
 
     const [isOptimizing, setIsOptimizing] = useState(false);
-    const [isLoadingTasks, setIsLoadingTasks] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
     const [isFetchingAI, setIsFetchingAI] = useState(false);
-    const [upcomingExams, setUpcomingExams] = useState<Exam[]>([]);
 
-    const [calendarDays, setCalendarDays] = useState<{ day: string; date: number; fullDate: Date; active: boolean; hasTask: boolean }[]>([]);
-
-    // Fetch full calendar range
-    const fetchCalendarRange = async () => {
-        try {
-            // Get ALL tasks to determine range
-            const response = await api.get('/api/study-planner/tasks');
-            const allTasks: StudyTask[] = response.data;
-
-            if (allTasks.length === 0) {
-                // Fallback to today if empty
-                const today = new Date();
-                setCalendarDays([{
-                    day: today.toLocaleDateString('en-US', { weekday: 'short' }),
-                    date: today.getDate(),
-                    fullDate: today,
-                    active: true,
-                    hasTask: false
-                }]);
-                return;
-            }
-
-            // Find Min and Max date
-            const timestamps = allTasks.map(t => new Date(t.start_time).getTime());
-            const minDate = new Date(Math.min(...timestamps));
-            const maxDate = new Date(Math.max(...timestamps));
-
-            // Generate all days in range
-            const days = [];
-            let current = new Date(minDate);
-            // Normalize to start of day
-            current.setHours(0, 0, 0, 0);
-
-            const end = new Date(maxDate);
-            end.setHours(23, 59, 59, 999);
-
-            // Create a set of dates that have tasks for quick lookup
-            const taskDates = new Set(allTasks.map(t => new Date(t.start_time).toDateString()));
-
-            while (current <= end) {
-                days.push({
-                    day: current.toLocaleDateString('en-US', { weekday: 'short' }),
-                    date: current.getDate(),
-                    fullDate: new Date(current),
-                    active: true,
-                    hasTask: taskDates.has(current.toDateString())
-                });
-                current.setDate(current.getDate() + 1);
-            }
-            setCalendarDays(days);
-
-            // If selectedDate is outside range, select the first day
-            /* 
-               Checking if selectedDate is within [minDate, maxDate] is good, 
-               but technically we can let user select whatever. 
-               However, for better UX, if they generate a plan that starts tomorrow, 
-               we should probably jump to tomorrow.
-            */
-            // const startNormalized = new Date(minDate); startNormalized.setHours(0,0,0,0);
-            // if (selectedDate < startNormalized || selectedDate > end) {
-            //     setSelectedDate(startNormalized);
-            // }
-
-        } catch (error) {
-            console.error("Error fetching calendar range:", error);
-        }
-    };
-
-    // Initial load
+    // Initial Data Load
     useEffect(() => {
-        fetchCalendarRange();
+        ensureDataLoaded();
     }, []);
 
-    // Fetch user preference on mount
-    useEffect(() => {
-        const fetchUserPref = async () => {
-            try {
-                const response = await api.get('/api/users/me');
-                if (response.data.energy_preference) {
-                    setUserEnergyPref(response.data.energy_preference);
-                }
-            } catch (error) {
-                console.error("Error fetching user profile:", error);
-            }
+    // Derived State: Is Selected Date an Exam Day or Revision Day?
+    const { isExamDay, isRevisionDay, isAfterAllExams } = useMemo(() => {
+        const startOfSelected = new Date(selectedDate);
+        startOfSelected.setHours(0, 0, 0, 0);
+
+        const allExamDates = exams.map(e => {
+            const d = new Date(e.exam.deadline);
+            d.setHours(0, 0, 0, 0);
+            return d.getTime();
+        });
+
+        const tomorrow = new Date(startOfSelected);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+
+        const maxExamDate = allExamDates.length > 0 ? Math.max(...allExamDates) : 0;
+
+        return {
+            isExamDay: allExamDates.includes(startOfSelected.getTime()),
+            isRevisionDay: allExamDates.includes(tomorrow.getTime()),
+            isAfterAllExams: maxExamDate > 0 && startOfSelected.getTime() > maxExamDate
         };
-        fetchUserPref();
-    }, []);
+    }, [selectedDate, exams]);
 
-    // Fetch tasks
-    const fetchTasks = async () => {
+    // Derived State: Filter Tasks for Selected Date
+    const dailyTasks = useMemo(() => {
+        if (isAfterAllExams) return [];
+
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        return allTasks.filter(t => {
+            const tDate = new Date(t.start_time);
+            const isWithinDay = tDate >= startOfDay && tDate <= endOfDay;
+            if (!isWithinDay) return false;
+
+            // Rule: On exam day, only show the Exam task itself
+            if (isExamDay) {
+                return t.task_type.toLowerCase() === 'exam' || t.title.toLowerCase().includes('exam');
+            }
+
+            return true;
+        });
+    }, [allTasks, selectedDate, isExamDay, isAfterAllExams]);
+
+    const handleRefresh = async () => {
+        setIsMuted(true);
         try {
-            setIsLoadingTasks(true);
-            const startOfDay = new Date(selectedDate);
-            startOfDay.setHours(0, 0, 0, 0);
-
-            const endOfDay = new Date(selectedDate);
-            endOfDay.setHours(23, 59, 59, 999);
-
-            const response = await api.get('/api/study-planner/tasks', {
-                params: {
-                    start_date: startOfDay.toISOString(),
-                    end_date: endOfDay.toISOString()
-                }
-            });
-            setTasks(response.data);
+            await refreshData();
+            showToast('Schedule updated', 'success');
         } catch (error) {
-            console.error("Error fetching tasks:", error);
+            showToast('Failed to refresh', 'error');
         } finally {
-            setIsLoadingTasks(false);
+            setIsMuted(false);
         }
     };
 
-    const fetchExams = async () => {
-        try {
-            const response = await api.get('/api/study-planner/exams');
-            setUpcomingExams(response.data);
-        } catch (error) {
-            console.error("Error fetching exams:", error);
-        }
-    };
+    // Auto-cleanup orphans removed (Endpoint deprecated)
+    // useEffect(() => { ... }, []);
 
-    useEffect(() => {
-        fetchTasks();
-        fetchExams();
-    }, [selectedDate]);
 
     const handleGenerateClick = () => {
         if (userEnergyPref) {
@@ -182,36 +125,130 @@ const StudyPlanner = () => {
         setIsAIModalOpen(true);
     };
 
-    const handlePeakHourUpdate = async (preference: any) => {
+    const handlePeakHourUpdate = async (preference: string) => {
         try {
+            // Guard: No peak hour updates allowed on/after exam days for study tasks
+            if (isExamDay) {
+                showToast("Cannot reschedule study tasks on your exam day.", "error");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
             setIsOptimizing(true);
-            // Call reoptimize endpoint
-            await api.post('/api/study-planner/reoptimize', null, {
-                params: { energy_preference: preference }
+
+            // Artificial delay for smooth UX
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+            // 1. Define Standard Windows (Priority-based, lowercase keys for matching)
+            const windows: Record<string, { start: number, end: number }> = {
+                'morning': { start: 6, end: 10 },
+                'afternoon': { start: 12, end: 16 },
+                'night': { start: 19, end: 23 }
+            };
+
+            const normalizedPref = preference.toLowerCase();
+            const selectedWindow = windows[normalizedPref] || windows['morning'];
+
+            // 2. Filter and Sort Daily Tasks
+            const sortedTasks = [...dailyTasks].sort((a, b) =>
+                new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+            );
+
+            if (sortedTasks.length === 0) {
+                showToast("No tasks to reschedule for today.", "info");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
+            // 3. Calculate Global Requirements
+            const bufferMinutes = 15;
+            const totalRequiredMinutes = sortedTasks.reduce((acc, t, idx) => {
+                const buffer = idx === sortedTasks.length - 1 ? 0 : bufferMinutes;
+                return acc + t.duration_minutes + buffer;
+            }, 0);
+
+            // Sanity Check: If total tasks > 19 hours, it won't fit in any day
+            if (totalRequiredMinutes > 1140) {
+                showToast("Too many tasks for a single day.", "error");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
+            // 4. Initial Start Time Determination (HARD PRIORITY: Window Start)
+            const peakStart = new Date(selectedDate);
+            peakStart.setHours(selectedWindow.start, 0, 0, 0);
+
+            const peakEnd = new Date(selectedDate);
+            peakEnd.setHours(selectedWindow.end, 0, 0, 0);
+
+            // 5. Two-Phase Allocation Loop
+            const updatedTasks: StudyTask[] = [];
+            let currentPointer = new Date(peakStart);
+            let isInOverflow = false;
+
+            sortedTasks.forEach(task => {
+                const taskDurationMs = task.duration_minutes * 60000;
+
+                // If it's a revision day, we strictly enforce 'Revision' task type
+                const taskType = isRevisionDay ? 'Revision' : task.task_type;
+
+                // Check if task fits in peak window (including buffer check)
+                if (!isInOverflow && (currentPointer.getTime() + taskDurationMs) <= peakEnd.getTime()) {
+                    // Phase 1: Peak Allocation
+                    updatedTasks.push({
+                        ...task,
+                        task_type: taskType,
+                        start_time: currentPointer.toISOString(),
+                        color: 'bg-warning' // Peak highlight
+                    });
+                    currentPointer = new Date(currentPointer.getTime() + (task.duration_minutes + bufferMinutes) * 60000);
+                } else {
+                    // Phase 2: Overflow Allocation
+                    if (!isInOverflow) {
+                        // First overflow task starts exactly at window end
+                        currentPointer = new Date(peakEnd);
+                        isInOverflow = true;
+                    }
+
+                    updatedTasks.push({
+                        ...task,
+                        task_type: taskType,
+                        start_time: currentPointer.toISOString(),
+                        color: 'bg-primary' // Standard overflow color
+                    });
+                    currentPointer = new Date(currentPointer.getTime() + (task.duration_minutes + bufferMinutes) * 60000);
+                }
             });
+
+            // 6. Batch Update Context
+            contextUpdateTasksBulk(updatedTasks);
             setUserEnergyPref(preference);
+            showToast(isRevisionDay ? `Schedule optimized for Revision!` : `Schedule optimized for ${preference}!`, "success");
             setIsPeakHourModalOpen(false);
-            setUserEnergyPref(preference);
-            setIsPeakHourModalOpen(false);
-            await fetchCalendarRange(); // Re-fetch range as optimization might change dates
-            await fetchTasks(); // Refresh tasks to show new times
+
         } catch (error) {
-            console.error("Failed to reoptimize:", error);
+            console.error("Advanced scheduling failed:", error);
+            showToast("Failed to optimize schedule.", "error");
         } finally {
             setIsOptimizing(false);
         }
     };
 
     const handleTaskCompletion = async (taskId: number, currentStatus: string) => {
-        try {
-            const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
-            // Optimistic update
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
 
+        const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+        const updatedTask = { ...task, status: newStatus };
+
+        try {
+            // Optimistic update via Context
+            contextUpdateTask(updatedTask);
             await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
         } catch (error) {
             console.error("Error updating task:", error);
-            fetchTasks(); // Revert on error
+            contextUpdateTask(task); // Revert on error
+            showToast('Failed to update status', 'error');
         }
     };
 
@@ -219,35 +256,42 @@ const StudyPlanner = () => {
         if (!taskToDelete) return;
 
         try {
-            // Optimistic update
-            setTasks(prev => prev.filter(t => t.id !== taskToDelete.id));
+            // Optimistic update via Context
+            contextDeleteTask(taskToDelete.id);
             setTaskToDelete(null); // Close modal immediately
-
             await api.delete(`/api/study-planner/tasks/${taskToDelete.id}`);
+            showToast('Task deleted', 'success');
         } catch (error) {
             console.error("Error deleting task:", error);
-            // Revert or show error
-            fetchTasks();
+            showToast('Failed to delete task', 'error');
+            refreshData(); // Sync on error
         }
     };
+
+    const showToast = (message: string, type: ToastType) => {
+        setToast({ message, type });
+    };
+
+    // Exam deletion functions removed as they are no longer used
+
 
     const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
         if (!taskToReschedule) return;
 
         try {
-            // Optimistic update
-            setTasks(prev => prev.map(t =>
-                t.id === taskToReschedule.id ? { ...t, ...updatedTaskPart } : t
-            ));
+            // Update in context
+            const task = allTasks.find(t => t.id === taskToReschedule.id);
+            if (task) {
+                contextUpdateTask({ ...task, ...updatedTaskPart });
+            }
 
-            // Build API payload
-            // Note: API expects snake_case but our internal interface is also snake_case for props, so clean mapping
             await api.put(`/api/study-planner/tasks/${taskToReschedule.id}`, updatedTaskPart);
-
             setTaskToReschedule(null);
+            showToast('Task rescheduled', 'success');
         } catch (error) {
             console.error("Error updating task:", error);
-            fetchTasks();
+            refreshData();
+            showToast('Failed to reschedule', 'error');
         }
     };
 
@@ -272,17 +316,19 @@ const StudyPlanner = () => {
                 start_time: suggestion.iso_start_time
             };
 
-            // Optimistic update
-            setTasks(prev => prev.map(t =>
-                t.id === taskToRescheduleAI.id ? { ...t, ...updatedPart } : t
-            ));
+            const task = allTasks.find(t => t.id === taskToRescheduleAI.id);
+            if (task) {
+                contextUpdateTask({ ...task, ...updatedPart });
+            }
 
             await api.put(`/api/study-planner/tasks/${taskToRescheduleAI.id}`, updatedPart);
             setTaskToRescheduleAI(null);
             setAiSuggestions([]);
+            showToast('AI suggestion applied', 'success');
         } catch (error) {
             console.error("Error applying AI suggestion:", error);
-            fetchTasks();
+            refreshData();
+            showToast('Failed to apply suggestion', 'error');
         }
     };
 
@@ -310,27 +356,20 @@ const StudyPlanner = () => {
                     <h1 className="text-3xl font-bold text-secondary-dark mb-2">Smart Study Planner</h1>
                     <p className="text-secondary">Your AI-generated schedule for maximum productivity.</p>
                 </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setIsPeakHourModalOpen(true)}
-                        className="flex items-center gap-2 bg-white text-secondary-dark border border-secondary-light/30 px-4 py-2.5 rounded-xl font-medium hover:bg-secondary-light/10 transition-colors"
-                    >
-                        <Clock className="w-5 h-5 text-primary" />
-                        Choose Peak Hour
-                    </button>
+                <div className="flex flex-wrap gap-3">
                     <button
                         onClick={handleGenerateClick}
-                        className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-pink-600 text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-lg shadow-pink-500/20"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
                     >
                         <Sparkles className="w-5 h-5" />
-                        Generate with AI
+                        Generate Plan
                     </button>
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="flex items-center gap-2 bg-white text-secondary-dark border border-secondary-light/30 px-5 py-2.5 rounded-xl font-medium hover:bg-secondary-light/10 transition-colors"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-white text-secondary-dark px-6 py-4 rounded-2xl font-bold border-2 border-secondary-light/20 hover:border-primary/30 active:scale-[0.98] transition-all"
                     >
                         <Plus className="w-5 h-5" />
-                        Add Custom Task
+                        Custom Task
                     </button>
                 </div>
             </div>
@@ -392,16 +431,49 @@ const StudyPlanner = () => {
 
                     {/* Timeline */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-bold text-secondary-dark">
-                            Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                        </h3>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-bold text-secondary-dark">
+                                    Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                </h3>
+                                {isExamDay && (
+                                    <span className="px-3 py-1 bg-error/10 text-error text-xs font-bold rounded-full border border-error/20 flex items-center gap-1.5 animate-pulse">
+                                        <div className="w-1.5 h-1.5 bg-error rounded-full" />
+                                        Exam Day
+                                    </span>
+                                )}
+                                {isRevisionDay && (
+                                    <span className="px-3 py-1 bg-warning/10 text-warning text-xs font-bold rounded-full border border-warning/20 flex items-center gap-1.5">
+                                        <Sparkles className="w-3 h-3" />
+                                        Revision Day
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setIsPeakHourModalOpen(true)}
+                                    className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                                    title="Adjust Peak Hours"
+                                >
+                                    <Clock className="w-5 h-5" />
+                                </button>
+                                <button
+                                    onClick={handleRefresh}
+                                    className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
+                                    disabled={isGlobalLoading}
+                                    title="Refresh Schedule"
+                                >
+                                    <RotateCw className={`w-5 h-5 ${isGlobalLoading ? 'animate-spin' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
 
-                        {isLoadingTasks ? (
+                        {isGlobalLoading && !dailyTasks.length ? (
                             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-secondary-light/20">
                                 <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
                                 <p className="text-secondary font-medium">Loading your study plan...</p>
                             </div>
-                        ) : tasks.length === 0 ? (
+                        ) : dailyTasks.length === 0 ? (
                             <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-secondary-light/30">
                                 <p className="text-secondary mb-4">No tasks scheduled for this day.</p>
                                 <button
@@ -412,8 +484,8 @@ const StudyPlanner = () => {
                                 </button>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {tasks.map((task, index) => (
+                            <div className={`space-y-4 ${isMuted ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {dailyTasks.map((task, index) => (
                                     <motion.div
                                         key={task.id}
                                         initial={{ opacity: 0, y: 10 }}
@@ -506,200 +578,232 @@ const StudyPlanner = () => {
                     </div>
                 </div>
 
-                {/* Sidebar Stats (Static for now, could be dynamic later) */}
+                {/* Sidebar - Daily Goal */}
                 <div className="space-y-6">
-                    <div className="bg-primary text-white p-6 rounded-3xl shadow-xl shadow-primary/20 relative overflow-hidden">
-                        <div className="relative z-10">
-                            <h3 className="text-lg font-bold mb-1">Daily Goal</h3>
-                            <p className="text-white/80 text-sm mb-6">You're doing great! Keep it up.</p>
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                        <h3 className="text-lg font-bold text-secondary-dark mb-1">Daily Goal</h3>
+                        <p className="text-sm text-secondary mb-6">{selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}'s Progress</p>
 
-                            <div className="flex items-end gap-2 mb-2">
-                                <span className="text-4xl font-bold">
-                                    {(tasks.filter(t => t.status === 'completed').reduce((acc, t) => acc + t.duration_minutes, 0) / 60).toFixed(1)}
-                                </span>
-                                <span className="text-lg opacity-80 mb-1">/ 6 hrs</span>
-                            </div>
-                            <div className="h-2 bg-black/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-white w-[75%] rounded-full"></div>
-                            </div>
+                        <div className="flex items-end gap-2 mb-2">
+                            <span className="text-4xl font-bold text-primary">{dailyTasks.filter(t => t.status === 'completed').length}</span>
+                            <span className="text-lg text-secondary-light font-medium mb-1">/ {dailyTasks.length} tasks</span>
                         </div>
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+
+                        <div className="w-full h-3 bg-secondary-light/10 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                                style={{ width: `${dailyTasks.length === 0 ? 0 : Math.round((dailyTasks.filter(t => t.status === 'completed').length / dailyTasks.length) * 100)}%` }}
+                            ></div>
+                        </div>
+
+                        <p className="text-xs text-secondary mt-4 flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-warning" />
+                            {dailyTasks.filter(t => t.status === 'completed').length === dailyTasks.length && dailyTasks.length > 0
+                                ? "All caught up! Great job!"
+                                : "Keep going, you're doing great!"}
+                        </p>
                     </div>
 
+                    {/* Upcoming Exams Section */}
                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20">
-                        <h3 className="text-lg font-bold text-secondary-dark mb-4">Upcoming Exams</h3>
-                        <div className="space-y-4">
-                            {upcomingExams.length === 0 ? (
-                                <p className="text-sm text-secondary text-center py-4">No upcoming exams scheduled.</p>
-                            ) : (
-                                upcomingExams.map((exam, i) => {
-                                    const examDate = new Date(exam.date);
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-secondary-dark">Upcoming Exams</h3>
+                        </div>
+
+                        {exams.length === 0 ? (
+                            <div className="p-4 bg-secondary-light/5 rounded-xl border border-dashed border-secondary-light/20 text-center">
+                                <p className="text-sm text-secondary">No upcoming exams found.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {exams.map((item) => {
+                                    const examDate = new Date(item.exam.deadline);
                                     const today = new Date();
-
-                                    // Reset hours to compare dates properly
-                                    const examDateOnly = new Date(examDate); examDateOnly.setHours(0, 0, 0, 0);
-                                    const todayOnly = new Date(today); todayOnly.setHours(0, 0, 0, 0);
-
-                                    const diffTime = examDateOnly.getTime() - todayOnly.getTime();
+                                    const diffTime = examDate.getTime() - today.getTime();
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                                    let daysLeft = "";
-                                    if (diffDays === 0) daysLeft = "Today";
-                                    else if (diffDays === 1) daysLeft = "Tomorrow";
-                                    else daysLeft = `${diffDays} days left`;
-
                                     return (
-                                        <div key={i} className="group relative flex items-center gap-4 p-3 rounded-xl hover:bg-background transition-colors border border-transparent hover:border-secondary-light/10">
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-error/5 to-error/10 flex flex-col items-center justify-center text-error border border-error/10">
-                                                <span className="text-xs font-bold uppercase">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                                <span className="text-lg font-bold leading-none">{examDate.getDate()}</span>
+                                        <div key={item.exam.id} className="grid grid-cols-[auto_1fr] gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
+                                            {/* Column 1: Date Badge */}
+                                            <div className="flex flex-col items-center justify-center w-14 h-14 bg-secondary-light/10 text-secondary-dark rounded-2xl font-bold border border-secondary-light/20">
+                                                <span className="text-xs text-secondary uppercase tracking-wider">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
+                                                <span className="text-xl">{examDate.getDate()}</span>
                                             </div>
-                                            <div className="flex-1">
-                                                <h4 className="font-bold text-secondary-dark text-sm">{exam.title}</h4>
-                                                <p className="text-xs text-secondary">{examDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric' })}</p>
-                                            </div>
-                                            <span className={`text-xs font-medium px-2 py-1 rounded-md ${diffDays <= 3 ? 'text-error bg-error/10' : 'text-primary bg-primary/5'
-                                                }`}>
-                                                {daysLeft}
-                                            </span>
 
-                                            {/* Delete Button - visible on hover */}
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteExam(exam.id); }}
-                                                className="absolute top-2 right-2 p-1.5 bg-white text-secondary-light hover:text-error hover:bg-error/5 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all transform scale-90 hover:scale-100"
-                                                title="Delete Exam and Tasks"
-                                            >
-                                                <MinusCircle className="w-4 h-4" />
-                                            </button>
+                                            {/* Column 2: Exam Info + Badge */}
+                                            <div className="min-w-0 flex flex-col gap-1">
+                                                <h4 className="font-bold text-secondary-dark text-base leading-tight" title={item.exam.title}>
+                                                    {item.exam.title}
+                                                </h4>
+
+                                                <div className="flex items-center gap-3">
+                                                    <p className="text-xs text-secondary font-medium">
+                                                        {examDate.toLocaleDateString('en-US', { weekday: 'long' })}, {examDate.getFullYear()}
+                                                    </p>
+
+                                                    {/* Days Left Badge (Inline) */}
+                                                    <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${diffDays <= 3 ? 'bg-error/10 text-error' :
+                                                        diffDays <= 7 ? 'bg-warning/10 text-warning' :
+                                                            'bg-success/10 text-success'
+                                                        }`}>
+                                                        {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     );
-                                })
-                            )}
-                        </div>
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
-            </div>
 
-            <CreateTaskModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onTaskCreated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
-                selectedDate={selectedDate}
-            />
 
-            <GeneratePlanModal
-                isOpen={isAIModalOpen}
-                onClose={() => setIsAIModalOpen(false)}
-                onPlanGenerated={() => { fetchTasks(); fetchCalendarRange(); fetchExams(); }}
-                energyPreference={userEnergyPref}
-            />
+                <CreateTaskModal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onTaskCreated={() => refreshData()}
+                    selectedDate={selectedDate}
+                />
 
-            <EnergyPreferenceModal
-                isOpen={isEnergyModalOpen}
-                onClose={() => setIsEnergyModalOpen(false)}
-                onSelect={handleEnergySelect}
-            />
+                <GeneratePlanModal
+                    isOpen={isAIModalOpen}
+                    onClose={() => setIsAIModalOpen(false)}
+                    onPlanGenerated={() => refreshData()}
+                    energyPreference={userEnergyPref}
+                />
 
-            <EnergyPreferenceModal
-                isOpen={isPeakHourModalOpen}
-                onClose={() => setIsPeakHourModalOpen(false)}
-                onSelect={handlePeakHourUpdate}
-                title="Choose your Peak Study Hour"
-                selectedPreference={userEnergyPref}
-            />
-            {isOptimizing && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
-                    >
-                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
-                            <Sparkles className="w-8 h-8 animate-pulse" />
-                        </div>
-                        <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
-                        <p className="text-secondary text-center mb-6">
-                            Optimizing your study plan for your peak hours...
-                        </p>
-                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                    </motion.div>
-                </div>
-            )}
+                <EnergyPreferenceModal
+                    isOpen={isEnergyModalOpen}
+                    onClose={() => setIsEnergyModalOpen(false)}
+                    onSelect={handleEnergySelect}
+                />
 
-            {/* Delete Confirmation Modal */}
-            {taskToDelete && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
-                    >
-                        <div className="p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
-                                    <Trash2 className="w-6 h-6" />
+                <EnergyPreferenceModal
+                    isOpen={isPeakHourModalOpen}
+                    onClose={() => setIsPeakHourModalOpen(false)}
+                    onSelect={handlePeakHourUpdate}
+                    title="Choose your Peak Study Hour"
+                    selectedPreference={userEnergyPref}
+                />
+                {
+                    isOptimizing && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
+                            >
+                                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
+                                    <Sparkles className="w-8 h-8 animate-pulse" />
                                 </div>
-                                <button
-                                    onClick={() => setTaskToDelete(null)}
-                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
-                            <p className="text-secondary mb-6">
-                                Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
-                                This action cannot be undone.
-                            </p>
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setTaskToDelete(null)}
-                                    className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleDeleteTask}
-                                    className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
-                                >
-                                    Delete Task
-                                </button>
-                            </div>
+                                <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
+                                <p className="text-secondary text-center mb-6">
+                                    Optimizing your study plan for your peak hours...
+                                </p>
+                                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                            </motion.div>
                         </div>
-                    </motion.div>
-                </div>
-            )}
-            {/* Reschedule Modal */}
-            {taskToReschedule && (
-                <RescheduleModal
-                    task={taskToReschedule}
-                    onClose={() => setTaskToReschedule(null)}
-                    onSave={handleRescheduleSave}
-                />
-            )}
+                    )
+                }
 
-            {/* AI Reschedule Suggestion Modal */}
-            {(taskToRescheduleAI || isFetchingAI) && (
-                <RescheduleAIModal
-                    task={taskToRescheduleAI}
-                    suggestions={aiSuggestions}
-                    isLoading={isFetchingAI}
-                    onClose={() => {
-                        setTaskToRescheduleAI(null);
-                        setAiSuggestions([]);
-                    }}
-                    onSelect={handleApplyAISuggestion}
-                />
-            )}
-        </div>
+
+
+                {/* Toast Notification */}
+                {
+                    toast && (
+                        <Toast
+                            message={toast.message}
+                            type={toast.type}
+                            onClose={() => setToast(null)}
+                        />
+                    )
+                }
+
+                {/* Delete Confirmation Modal (Task) */}
+                {
+                    taskToDelete && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                            >
+                                <div className="p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                            <Trash2 className="w-6 h-6" />
+                                        </div>
+                                        <button
+                                            onClick={() => setTaskToDelete(null)}
+                                            className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+                                    </div>
+
+                                    <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
+                                    <p className="text-secondary mb-6">
+                                        Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
+                                        This action cannot be undone.
+                                    </p>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setTaskToDelete(null)}
+                                            className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleDeleteTask}
+                                            className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                        >
+                                            Delete Task
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )
+                }
+
+
+                {/* Reschedule Modal */}
+                {
+                    taskToReschedule && (
+                        <RescheduleModal
+                            task={taskToReschedule}
+                            onClose={() => setTaskToReschedule(null)}
+                            onSave={handleRescheduleSave}
+                        />
+                    )
+                }
+
+                {/* AI Reschedule Suggestion Modal */}
+                {
+                    (taskToRescheduleAI || isFetchingAI) && (
+                        <RescheduleAIModal
+                            task={taskToRescheduleAI}
+                            suggestions={aiSuggestions}
+                            isLoading={isFetchingAI}
+                            onClose={() => {
+                                setTaskToRescheduleAI(null);
+                                setAiSuggestions([]);
+                            }}
+                            onSelect={handleApplyAISuggestion}
+                        />
+                    )
+                }
+            </div >
+        </div >
     );
 };
 
 // Inline Reschedule Modal Component
-const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: () => void, onSave: (data: any) => void }) => {
+function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: () => void, onSave: (data: any) => void }) {
     // Initialize state with task values
     // Date handling: existing start_time is ISO string. 
     const taskDate = new Date(task.start_time);
@@ -744,7 +848,7 @@ const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: 
                         <div>
                             <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Date</label>
                             <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
                                 <input
                                     type="date"
                                     value={date}
@@ -824,7 +928,7 @@ const RescheduleModal = ({ task, onClose, onSave }: { task: StudyTask, onClose: 
 };
 
 // AI Reschedule Modal
-const RescheduleAIModal = ({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) => {
+function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <motion.div

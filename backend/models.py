@@ -48,7 +48,6 @@ class Student(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     full_name = Column(String(255))
-    #energy_preference = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="student_profile")
@@ -72,7 +71,6 @@ class Exam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
-    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
     title = Column(String(255))
     
@@ -87,7 +85,6 @@ class Exam(Base):
     external_link = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    teacher = relationship("Teacher", back_populates="exams")
     teacher = relationship("Teacher", back_populates="exams")
 
     submissions = relationship("ExamSubmission", back_populates="exam", cascade="all, delete-orphan")
