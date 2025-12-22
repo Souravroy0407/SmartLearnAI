@@ -49,7 +49,6 @@ class Student(Base):
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     full_name = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
-
     user = relationship("User", back_populates="student_profile")
     quiz_attempts = relationship("QuizAttempt", back_populates="student")
     study_tasks = relationship("StudyTask", back_populates="student")
