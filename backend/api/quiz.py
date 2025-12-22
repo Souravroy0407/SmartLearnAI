@@ -36,6 +36,10 @@ class QuizCreate(BaseModel):
     topic: str
     questions: List[QuestionCreate]
 
+from datetime import datetime, timezone
+
+# ... (Previous imports)
+
 class QuizResponse(BaseModel):
     id: int
     title: str
@@ -50,6 +54,7 @@ class QuizResponse(BaseModel):
     score: Optional[int] = None
     attempted_count: Optional[int] = None
     warnings_count: Optional[int] = 0
+    is_expired: bool = False
 
 class SubmissionAnswer(BaseModel):
     question_id: int
@@ -65,11 +70,6 @@ class GenerateQuizRequest(BaseModel):
     topic: str
     difficulty: str
     count: int
-
-# --- Endpoints ---
-
-# ... (skip to list_quizzes)
-
 
 @router.get("/", response_model=List[QuizResponse])
 def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -99,34 +99,44 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
     counts_map = {quiz_id: count for quiz_id, count in question_counts}
     
     # Fetch attempts for the current user in one query
-    # If student, use student_id. If teacher, maybe preview? Assuming student for attempts view.
-    # Only fetch if student_id exists
     attempts = []
     if current_user.student_profile:
         student_id = current_user.student_profile.id
         attempts = db.query(QuizAttempt).filter(QuizAttempt.student_id == student_id).all()
     
-
     attempts_map = {att.quiz_id: att for att in attempts}
 
     results = []
-    now = datetime.utcnow()
+    # Use aware UTC time as requested
+    now = datetime.now(timezone.utc)
 
     for q in quizzes:
         # Determine status
         status = "active"
         score = None
         attempted_count = None
+        is_expired = False
         
+        # Calculate expiry
+        if q.deadline:
+            # Ensure deadline is aware for comparison or make now naive if deadline is naive
+            # Safest approach: treat deadline as UTC
+            deadline_val = q.deadline
+            if deadline_val.tzinfo is None:
+                # Handle naive datetime (assume system local time)
+                # Convert to UTC-aware
+                deadline_val = deadline_val.astimezone(timezone.utc)
+            
+            if now > deadline_val:
+                is_expired = True
+
         attempt = attempts_map.get(q.id)
         if attempt:
             status = "attempted"
             score = attempt.score
-            attempted_count = attempt.total_questions # Repurposed column for attempted count
-        elif q.deadline:
-             # Already a datetime object from DB
-             if now > q.deadline:
-                status = "expired"
+            attempted_count = attempt.total_questions
+        elif is_expired:
+            status = "expired"
 
         results.append({
             "id": q.id,
@@ -140,7 +150,8 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "questions_count": counts_map.get(q.id, 0),
             "status": status,
             "score": score,
-            "attempted_count": attempted_count
+            "attempted_count": attempted_count,
+            "is_expired": is_expired
         })
     return results
 
@@ -197,9 +208,14 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
     # Check deadline
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if quiz and quiz.deadline:
-        # Allow small buffer for latency
-        if datetime.utcnow() > quiz.deadline:
-             pass 
+        # Strict expiry check with UTC awareness
+        deadline_val = quiz.deadline
+        if deadline_val.tzinfo is None:
+             deadline_val = deadline_val.astimezone(timezone.utc)
+        
+        now = datetime.now(timezone.utc)
+        if now > deadline_val:
+             raise HTTPException(status_code=400, detail="Quiz has expired") 
 
     score = 0
     attempted_count = len(submission.answers)

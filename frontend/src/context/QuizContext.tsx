@@ -16,6 +16,7 @@ export interface Quiz {
     deadline?: string;
     difficulty: string;
     topic: string;
+    is_expired: boolean;
 }
 
 interface QuizContextType {

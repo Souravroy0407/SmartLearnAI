@@ -154,6 +154,13 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
             }
         }
 
+        // Convert deadline to UTC ISO string
+        let utcDeadline = null;
+        if (deadline) {
+            const localDate = new Date(deadline);
+            utcDeadline = localDate.toISOString();
+        }
+
         setLoading(true);
         try {
             await axios.post('/api/quiz/', {
@@ -162,7 +169,7 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                 topic,
                 difficulty,
                 duration_minutes: parseInt(duration),
-                deadline: deadline || null,
+                deadline: utcDeadline,
                 questions
             });
             onSuccess();

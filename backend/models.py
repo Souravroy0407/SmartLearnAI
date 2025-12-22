@@ -48,7 +48,7 @@ class Student(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     full_name = Column(String(255))
-    energy_preference = Column(String(50), nullable=True)
+    #energy_preference = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="student_profile")
