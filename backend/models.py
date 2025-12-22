@@ -71,7 +71,6 @@ class Exam(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
-    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
     title = Column(String(255))
     
@@ -86,7 +85,6 @@ class Exam(Base):
     external_link = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    teacher = relationship("Teacher", back_populates="exams")
     teacher = relationship("Teacher", back_populates="exams")
 
     submissions = relationship("ExamSubmission", back_populates="exam", cascade="all, delete-orphan")

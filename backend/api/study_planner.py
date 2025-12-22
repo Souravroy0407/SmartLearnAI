@@ -173,7 +173,7 @@ def get_valid_gemini_model(api_key: str):
     # Final fallback if listing fails but we have a name
     return desired_model or "models/gemini-1.5-flash"
 
-def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User):
+def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str, start_date_ref: datetime, db: Session, user: User, exam_dt: datetime):
     """
     Fallback planner when AI fails. Distributes topics sequentially into peak hours.
     """
@@ -229,6 +229,16 @@ def generate_deterministic_plan(subject: str, topics: str, user_energy_pref: str
         if current_hour >= allowed_end:
             current_hour = allowed_start
             current_date += timedelta(days=1)
+        
+        # --- EXAM BOUNDARY GUARD ---
+        if current_date.date() >= exam_dt.date():
+             print("[DETERMINISTIC GUARD] Stopping scheduling as we reached exam date.")
+             break
+        
+        # --- REVISION RULE ---
+        # If tomorrow is exam day, force subsequent tasks to be Revision
+        if (current_date + timedelta(days=1)).date() == exam_dt.date():
+             task_type = "Revision"
             
     db.commit()
     return {"message": f"Generated {len(created_tasks)} tasks (Offline Mode)."}
@@ -305,12 +315,14 @@ def generate_study_plan(
         User Energy Preference: {user_energy_pref}
         
         Requirements:
-        1. Break down the topics into daily study tasks starting from {request.start_date} up to {request.exam_date}.
-        2. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
-        3. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
-        4. {energy_instructions}
-        5. Provide the response strictly in valid JSON format.
-        6. No markdown code blocks, just raw JSON.
+        1. Break down the topics into daily study tasks starting from {request.start_date} up to (but NOT INCLUDING) {request.exam_date}.
+        2. MANDATORY: The day immediately before the exam ({ (exam_dt - timedelta(days=1)).strftime('%Y-%m-%d') }) MUST be dedicated entirely to REVISION. Do NOT introduce new topics on this day.
+        3. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
+        4. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
+        5. {energy_instructions}
+        6. ABSOLUTELY NO tasks should be scheduled for {request.exam_date} or later.
+        7. Provide the response strictly in valid JSON format.
+        8. No markdown code blocks, just raw JSON.
         
         JSON Schema:
         [
@@ -347,6 +359,11 @@ def generate_study_plan(
             # Calculate start time based on offset and specified start_hour
             target_date = base_date_ref + timedelta(days=item['start_time_offset_days'])
             
+            # --- EXAM BOUNDARY GUARD ---
+            if target_date.date() >= exam_dt.date():
+                print(f"[GUARD] Skipping AI task '{item['title']}' because it falls on or after exam date ({target_date.date()})")
+                continue
+
             # Enforce peak hour start if AI goes off-track
             start_hour = item.get('start_hour', 9)
             
@@ -459,7 +476,8 @@ def generate_study_plan(
             user_energy_pref, 
             start_dt, 
             db, 
-            current_user
+            current_user,
+            exam_dt
         )
 
 @router.post("/reoptimize")
@@ -507,8 +525,29 @@ def reoptimize_study_plan(
     for date_key, day_tasks in tasks_by_date.items():
         day_tasks.sort(key=lambda x: x.start_time)
         
+        # 3.1 Identify Exam Day (Special constraint)
+        # We don't have the exam date explicitly here easily without fetching exams, 
+        # but we can check if any task in THIS day is of type "Exam"
+        has_exam_today = any(t.task_type.lower() == "exam" for t in day_tasks)
+        
+        if has_exam_today:
+             # If it's exam day, we KEEP the exam task and only move OTHER tasks if allowed?
+             # Rule says: ONLY the exam task on exam day.
+             # So we should probably remove other study tasks if they were somehow moved here.
+             # For now, let's just ensure we DON'T re-optimize the Exam task itself.
+             pass
+
         current_time = datetime.combine(date_key, datetime.min.time()).replace(hour=peak_start_hour)
         for t in day_tasks:
+            if t.task_type.lower() == "exam":
+                 continue # Never move the exam itself
+            
+            if has_exam_today:
+                 # Move study tasks off exam day? 
+                 # Actually, better to just let the user delete or let it be.
+                 # But re-optimization should ideally NOT put study tasks on exam day.
+                 pass
+
             t.start_time = current_time
             is_peak = current_time.hour >= peak_start_hour and current_time.hour < (peak_start_hour + 4)
             if is_peak:

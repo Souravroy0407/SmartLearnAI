@@ -48,8 +48,34 @@ const StudyPlanner = () => {
         ensureDataLoaded();
     }, []);
 
+    // Derived State: Is Selected Date an Exam Day or Revision Day?
+    const { isExamDay, isRevisionDay, isAfterAllExams } = useMemo(() => {
+        const startOfSelected = new Date(selectedDate);
+        startOfSelected.setHours(0, 0, 0, 0);
+
+        const allExamDates = exams.map(e => {
+            const d = new Date(e.exam.deadline);
+            d.setHours(0, 0, 0, 0);
+            return d.getTime();
+        });
+
+        const tomorrow = new Date(startOfSelected);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+
+        const maxExamDate = allExamDates.length > 0 ? Math.max(...allExamDates) : 0;
+
+        return {
+            isExamDay: allExamDates.includes(startOfSelected.getTime()),
+            isRevisionDay: allExamDates.includes(tomorrow.getTime()),
+            isAfterAllExams: maxExamDate > 0 && startOfSelected.getTime() > maxExamDate
+        };
+    }, [selectedDate, exams]);
+
     // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
+        if (isAfterAllExams) return [];
+
         const startOfDay = new Date(selectedDate);
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(selectedDate);
@@ -57,9 +83,17 @@ const StudyPlanner = () => {
 
         return allTasks.filter(t => {
             const tDate = new Date(t.start_time);
-            return tDate >= startOfDay && tDate <= endOfDay;
+            const isWithinDay = tDate >= startOfDay && tDate <= endOfDay;
+            if (!isWithinDay) return false;
+
+            // Rule: On exam day, only show the Exam task itself
+            if (isExamDay) {
+                return t.task_type.toLowerCase() === 'exam' || t.title.toLowerCase().includes('exam');
+            }
+
+            return true;
         });
-    }, [allTasks, selectedDate]);
+    }, [allTasks, selectedDate, isExamDay, isAfterAllExams]);
 
     const handleRefresh = async () => {
         setIsMuted(true);
@@ -93,6 +127,13 @@ const StudyPlanner = () => {
 
     const handlePeakHourUpdate = async (preference: string) => {
         try {
+            // Guard: No peak hour updates allowed on/after exam days for study tasks
+            if (isExamDay) {
+                showToast("Cannot reschedule study tasks on your exam day.", "error");
+                setIsPeakHourModalOpen(false);
+                return;
+            }
+
             setIsOptimizing(true);
 
             // Artificial delay for smooth UX
@@ -148,11 +189,15 @@ const StudyPlanner = () => {
             sortedTasks.forEach(task => {
                 const taskDurationMs = task.duration_minutes * 60000;
 
+                // If it's a revision day, we strictly enforce 'Revision' task type
+                const taskType = isRevisionDay ? 'Revision' : task.task_type;
+
                 // Check if task fits in peak window (including buffer check)
                 if (!isInOverflow && (currentPointer.getTime() + taskDurationMs) <= peakEnd.getTime()) {
                     // Phase 1: Peak Allocation
                     updatedTasks.push({
                         ...task,
+                        task_type: taskType,
                         start_time: currentPointer.toISOString(),
                         color: 'bg-warning' // Peak highlight
                     });
@@ -167,6 +212,7 @@ const StudyPlanner = () => {
 
                     updatedTasks.push({
                         ...task,
+                        task_type: taskType,
                         start_time: currentPointer.toISOString(),
                         color: 'bg-primary' // Standard overflow color
                     });
@@ -177,7 +223,7 @@ const StudyPlanner = () => {
             // 6. Batch Update Context
             contextUpdateTasksBulk(updatedTasks);
             setUserEnergyPref(preference);
-            showToast(`Schedule optimized for ${preference}!`, "success");
+            showToast(isRevisionDay ? `Schedule optimized for Revision!` : `Schedule optimized for ${preference}!`, "success");
             setIsPeakHourModalOpen(false);
 
         } catch (error) {
@@ -386,9 +432,23 @@ const StudyPlanner = () => {
                     {/* Timeline */}
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-secondary-dark">
-                                Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                            </h3>
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-bold text-secondary-dark">
+                                    Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                </h3>
+                                {isExamDay && (
+                                    <span className="px-3 py-1 bg-error/10 text-error text-xs font-bold rounded-full border border-error/20 flex items-center gap-1.5 animate-pulse">
+                                        <div className="w-1.5 h-1.5 bg-error rounded-full" />
+                                        Exam Day
+                                    </span>
+                                )}
+                                {isRevisionDay && (
+                                    <span className="px-3 py-1 bg-warning/10 text-warning text-xs font-bold rounded-full border border-warning/20 flex items-center gap-1.5">
+                                        <Sparkles className="w-3 h-3" />
+                                        Revision Day
+                                    </span>
+                                )}
+                            </div>
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={() => setIsPeakHourModalOpen(true)}
