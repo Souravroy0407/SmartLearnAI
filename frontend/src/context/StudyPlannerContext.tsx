@@ -18,6 +18,7 @@ export interface StudyTask {
     title: string;
     task_type: string;
     start_time: string;
+    task_date: string; // Added for robust filtering
     duration_minutes: number;
     status: string;
     color: string;
@@ -58,6 +59,7 @@ interface StudyPlannerContextType {
     // Optimistic Update Helpers
     updateTask: (updatedTask: StudyTask) => void;
     updateTasksBulk: (updatedTasks: StudyTask[]) => void;
+    addTasksBulk: (newTasks: StudyTask[]) => void;
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
     setUserEnergyPref: (pref: string) => void;
@@ -151,11 +153,25 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const refreshTasks = async () => {
-        // Tasks API will be connected later
-        // Currently empty to avoid 404s
-        const tasks: StudyTask[] = [];
-        setAllTasks(tasks);
-        calculateCalendarRange(tasks);
+        if (!user) return;
+        try {
+            const response = await api.get('/api/study-planner/tasks');
+            const newTasks = response.data.map((t: any) => ({
+                id: t.task_id,
+                title: toTitleCase(t.title),
+                task_type: t.title.toLowerCase().includes('exam') ? 'Exam' : 'Study',
+                start_time: t.task_time,
+                task_date: t.task_date,
+                duration_minutes: t.duration_minutes || 60,
+                status: t.task_status,
+                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary'
+            }));
+            setAllTasks(newTasks);
+            calculateCalendarRange(newTasks);
+        } catch (error) {
+            console.error("Failed to fetch tasks:", error);
+            setAllTasks([]);
+        }
     };
 
     const refreshAll = async () => {
@@ -210,6 +226,11 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setAllTasks(prev => [...prev, normalizedTask]);
     };
 
+    const addTasksBulk = (newTasks: StudyTask[]) => {
+        const normalized = newTasks.map(t => ({ ...t, title: toTitleCase(t.title) }));
+        setAllTasks(prev => [...prev, ...normalized]);
+    };
+
     // Reset on logout (if user becomes null)
     useEffect(() => {
         if (!user) {
@@ -237,6 +258,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             ensureDataLoaded,
             updateTask,
             updateTasksBulk,
+            addTasksBulk,
             deleteTask,
             addTask,
             setUserEnergyPref

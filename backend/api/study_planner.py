@@ -1,15 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel
 from datetime import datetime, date as PyDate, timedelta
-import google.generativeai as genai
 import os
-import json
-import re
 
 from database import get_db
-from models import StudyGoal, CreateTaskAI, User
+from models import StudyGoal, CreateTaskAI, CreateTaskManual, User
 from auth import get_current_user
 
 router = APIRouter()
@@ -33,48 +30,7 @@ class StudyGoalResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class GeneratePlanRequest(BaseModel):
-    subject: str
-    topics: str
-    exam_date: str
-    start_date: str # YYYY-MM-DD
-    hours_per_day: float
-    energy_preference: Optional[str] = None
-    goal_id: int # NEW: Required to link tasks
 
-# --- Helper Functions ---
-
-def get_valid_gemini_model(api_key: str):
-    """
-    Dynamically find a Gemini model that supports generateContent.
-    """
-    genai.configure(api_key=api_key)
-    desired_model = os.getenv("GEMINI_MODEL")
-    
-    try:
-        valid_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                valid_models.append(m.name)
-        
-        if desired_model:
-            for vm in valid_models:
-                if desired_model in vm:
-                    return vm
-        
-        preferred = [m for m in valid_models if 'flash' in m.lower()]
-        if preferred:
-            return preferred[0]
-            
-        if valid_models:
-            return valid_models[0]
-            
-    except Exception as e:
-        print(f"Error listing models: {e}")
-        
-    return desired_model or "models/gemini-1.5-flash"
-
-# --- Endpoints ---
 
 @router.post("/goals", response_model=StudyGoalResponse)
 def create_goal(
@@ -130,144 +86,78 @@ def delete_goal(
     
     return {"message": "Goal deleted successfully"}
 
-@router.post("/generate")
-def generate_study_plan(
-    request: GeneratePlanRequest,
+
+
+class StudyTaskResponse(BaseModel):
+    task_id: int
+    goal_id: int
+    title: str
+    task_date: Optional[PyDate]
+    task_time: Optional[datetime] # Added for frontend compatibility
+    duration_minutes: Optional[int]
+    sequence_no: Optional[int]
+    task_status: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/tasks", response_model=List[StudyTaskResponse])
+def list_tasks(
+    date: Optional[PyDate] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Gemini API Key not configured")
+    # Fetch AI Tasks
+    ai_query = db.query(CreateTaskAI).filter(CreateTaskAI.student_id == current_user.id)
+    if date:
+        ai_query = ai_query.filter(CreateTaskAI.task_date == date)
+    ai_tasks = ai_query.all()
     
-    # Removed student_profile check
+    # Fetch Manual Tasks (if table exists and is used)
+    # The user mentioned merging if planner supports it. Assuming yes.
+    manual_query = db.query(CreateTaskManual).filter(CreateTaskManual.student_id == current_user.id)
+    if date:
+        manual_query = manual_query.filter(CreateTaskManual.task_date == date)
+    manual_tasks = manual_query.all()
     
-    # 0. Validate Goal
-    goal = db.query(StudyGoal).filter(
-        StudyGoal.goal_id == request.goal_id,
-        StudyGoal.student_id == current_user.id
-    ).first()
+    # Convert and Combine
+    combined_tasks = []
     
-    if not goal:
-        raise HTTPException(status_code=404, detail="Study Goal not found")
+    for t in ai_tasks:
+        combined_tasks.append(StudyTaskResponse(
+            task_id=t.task_id,
+            goal_id=t.goal_id,
+            title=t.title,
+            task_date=t.task_date,
+            task_time=t.task_time,
+            duration_minutes=t.duration_minutes,
+            sequence_no=t.sequence_no or 0,
+            task_status=t.task_status
+        ))
+        
+    # Manual tasks might not have goal_id, sequence_no etc. 
+    # For now, mapping manually to match schema.
+    # Note: StudyTaskResponse requires goal_id. CreateTaskManual doesn't have it.
+    # We might need to adjust schema or use a dummy goal_id (e.g. 0).
+    for t in manual_tasks:
+         # Simplified mapping
+         combined_tasks.append(StudyTaskResponse(
+            task_id=t.task_id,
+            goal_id=0, # Manual tasks don't belong to a goal
+            title=t.title,
+            task_date=t.task_date,
+            task_time=t.task_time, # Manual tasks have task_time too
+            duration_minutes=60, # Default if missing
+            sequence_no=0,
+            task_status=t.status
+        ))
+    
+    # Sort: Date ASC, Sequence ASC
+    combined_tasks.sort(key=lambda x: (x.task_date or PyDate.min, x.sequence_no or 0))
+    
+    return combined_tasks
 
-    # 1. Validate Dates
-    try:
-        start_dt = datetime.strptime(request.start_date, "%Y-%m-%d")
-        exam_dt = datetime.strptime(request.exam_date, "%Y-%m-%d")
-        if start_dt >= exam_dt:
-             raise HTTPException(status_code=400, detail="Start Date must be before Exam Date")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid Date Format (YYYY-MM-DD)")
-
-    # 2. Energy Preference
-    user_energy_pref = request.energy_preference or "balanced"
-    
-    print(f"[DEBUG] Generating plan for Goal '{goal.title}'. Start: {request.start_date}, Exam: {request.exam_date}")
-    
-    # 3. AI Generation
-    try:
-        valid_model_name = get_valid_gemini_model(api_key)
-        model = genai.GenerativeModel(valid_model_name)
-
-        # Energy Preference Logic
-        energy_instructions = ""
-        if user_energy_pref == "morning":
-            energy_instructions = "HARD CONSTRAINT: Schedule ALL tasks ONLY between 6 AM and 10 AM. Do NOT schedule outside this window."
-        elif user_energy_pref == "afternoon":
-            energy_instructions = "HARD CONSTRAINT: Schedule ALL tasks ONLY between 12 PM and 4 PM. Do NOT schedule outside this window."
-        elif user_energy_pref == "night":
-            energy_instructions = "HARD CONSTRAINT: Schedule ALL tasks ONLY between 7 PM and 11 PM. Do NOT schedule outside this window."
-        else:
-            energy_instructions = "Create a balanced schedule starting around 9 AM."
-    
-        # Use goal.title as primary subject context if distinct
-        # The prompt uses request.subject, which the frontend sends.
-        # We will keep using request.subject to not break the prompt logic, 
-        # but the Tasks will be linked to the Goal.
-        
-        prompt = f"""
-        You are an expert study planner. Create a study schedule for me.
-        
-        Start Date: {request.start_date}
-        Subject: {request.subject}
-        Topics to Cover: {request.topics}
-        Exam Date: {request.exam_date}
-        Available Hours Per Day: {request.hours_per_day}
-        User Energy Preference: {user_energy_pref}
-        
-        Requirements:
-        1. Break down the topics into daily study tasks starting from {request.start_date} up to (but NOT INCLUDING) {request.exam_date}.
-        2. MANDATORY: The day immediately before the exam ({ (exam_dt - timedelta(days=1)).strftime('%Y-%m-%d') }) MUST be dedicated entirely to REVISION. Do NOT introduce new topics on this day.
-        3. Vary the task types (Video Lecture, Revision, Practice Quiz, Assignment).
-        4. Ensure total minutes per day does not exceed {request.hours_per_day * 60} minutes.
-        5. {energy_instructions}
-        6. ABSOLUTELY NO tasks should be scheduled for {request.exam_date} or later.
-        7. Provide the response strictly in valid JSON format.
-        8. No markdown code blocks, just raw JSON.
-        
-        JSON Schema:
-        [
-            {{
-                "title": "Topic Name: Activity",
-                "task_type": "Revision" | "Practice Quiz" | "Video Lecture" | "Assignment" | "New Concept" | "Problem Solving",
-                "start_time_offset_days": 0, // MUST BE 0 for the first task.
-                "start_hour": 9, // Desired start hour (0-23) based on energy preference
-                "duration_minutes": 60,
-                "color": "bg-primary" // bg-primary (standard), bg-warning (hard/focus), bg-success (easy/revision), bg-error (urgent)
-            }}
-        ]
-        """
-    
-        response = model.generate_content(prompt)
-        text = response.text
-        
-        text = re.sub(r"```json\s*", "", text)
-        text = re.sub(r"```", "", text)
-        
-        tasks_data = json.loads(text)
-        
-        created_tasks = []
-        base_date_ref = start_dt
-        
-        for item in tasks_data:
-            target_date = base_date_ref + timedelta(days=item['start_time_offset_days'])
-            
-            if target_date.date() >= exam_dt.date():
-                continue
-
-            start_hour = item.get('start_hour', 9)
-            
-            # Simple clamp logic
-            # (Keeping simplified for this migration)
-            start_time = target_date.replace(hour=int(start_hour), minute=0, second=0, microsecond=0)
-            
-            # Create CreateTaskAI Record
-            # Mapping:
-            # - goal_id -> goal.goal_id
-            # - student_id -> goal.student_id
-            # - title -> item['title'] (AI generated title)
-            # - task_time -> start_time
-            # - task_status -> 'active'
-            
-            task = CreateTaskAI(
-                goal_id=goal.goal_id,
-                student_id=goal.student_id,
-                title=item['title'], # AI generated title
-                task_time=start_time,
-                task_status='active'
-            )
-            
-            db.add(task)
-            created_tasks.append(task)
-            
-        db.commit()
-        return {"message": f"Successfully generated {len(created_tasks)} study tasks."}
-        
-    except Exception as e:
-        print(f"AI Generation Failed: {e}")
-        db.rollback() 
-        raise HTTPException(status_code=500, detail="Plan Generation Failed")
 
 @router.patch("/tasks/ai/{task_id}/complete")
 def complete_ai_task(
@@ -275,13 +165,10 @@ def complete_ai_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if not current_user.student_profile:
-        raise HTTPException(status_code=400, detail="User must have a student profile")
-        
     # Verify task ownership via student_id directly
     task = db.query(CreateTaskAI).filter(
         CreateTaskAI.task_id == task_id,
-        CreateTaskAI.student_id == current_user.student_profile.id
+        CreateTaskAI.student_id == current_user.id
     ).first()
     
     if not task:

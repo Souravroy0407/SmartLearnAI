@@ -25,7 +25,8 @@ const StudyPlanner = () => {
         deleteTask: contextDeleteTask,
         setUserEnergyPref,
         refreshGoals,
-        refreshAll
+        refreshAll,
+        addTasksBulk
     } = useStudyPlanner();
 
     // Local UI State
@@ -76,27 +77,29 @@ const StudyPlanner = () => {
     }, [selectedDate, exams]);
 
     // Derived State: Filter Tasks for Selected Date
+    // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
         if (isAfterAllExams) return [];
 
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(selectedDate.getDate()).padStart(2, '0');
+        const formattedSelected = `${year}-${month}-${day}`;
 
         return allTasks.filter(t => {
-            const tDate = new Date(t.start_time);
-            const isWithinDay = tDate >= startOfDay && tDate <= endOfDay;
-            if (!isWithinDay) return false;
-
-            // Rule: On exam day, only show the Exam task itself
-            if (isExamDay) {
-                return t.task_type.toLowerCase() === 'exam' || t.title.toLowerCase().includes('exam');
+            // Robust check: Compare date strings directly (YYYY-MM-DD)
+            // This prevents timezone mishaps with UTC timestamps
+            if (t.task_date) {
+                return t.task_date === formattedSelected;
             }
 
-            return true;
+            // Fallback for legacy tasks without task_date (shouldn't exist anymore for new tasks)
+            const tDate = new Date(t.start_time);
+            return tDate.getDate() === selectedDate.getDate() &&
+                tDate.getMonth() === selectedDate.getMonth() &&
+                tDate.getFullYear() === selectedDate.getFullYear();
         });
-    }, [allTasks, selectedDate, isExamDay, isAfterAllExams]);
+    }, [allTasks, selectedDate, isAfterAllExams]);
 
     const handleRefresh = async () => {
         setIsMuted(true);
@@ -717,8 +720,11 @@ const StudyPlanner = () => {
                 <GeneratePlanModal
                     isOpen={isAIModalOpen}
                     onClose={() => setIsAIModalOpen(false)}
-                    onPlanGenerated={() => refreshAll()}
-                    energyPreference={userEnergyPref}
+                    onPlanGenerated={(newTasks) => {
+                        addTasksBulk(newTasks);
+                        refreshGoals(); // Refresh goals to ensure consistency/status updates if any
+                    }}
+                    goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title }))}
                 />
 
                 <EnergyPreferenceModal

@@ -152,16 +152,21 @@ class StudyGoal(Base):
 # ===================== AI TASKS =====================
 
 class CreateTaskAI(Base):
-    __tablename__ = "create_task_AI"
+    __tablename__ = "create_task_ai"   # ⚠️ lowercase to match DB table exactly
 
     task_id = Column(Integer, primary_key=True, autoincrement=True)
-    goal_id = Column(Integer, ForeignKey("study_goal.goal_id", ondelete="CASCADE"), nullable=False)
+    goal_id = Column(Integer, ForeignKey("study_goal.goal_id", ondelete="CASCADE"),nullable=False)
     student_id = Column(Integer, nullable=False)
     title = Column(String(255), nullable=False)
+    # Original field (keep)
     task_time = Column(DateTime, nullable=False)
-    task_status = Column(String(50), nullable=False, default='active')
+    # ✅ NEW FIELDS (added)
+    task_date = Column(Date, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    sequence_no = Column(Integer, nullable=True)
+    task_status = Column(String(50), nullable=False, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    # Relationship
     goal = relationship("StudyGoal", back_populates="tasks")
 
 # ===================== MANUAL TASKS =====================
