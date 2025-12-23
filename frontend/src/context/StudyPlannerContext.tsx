@@ -18,6 +18,7 @@ export interface StudyTask {
     title: string;
     task_type: string;
     start_time: string;
+    task_date: string; // Added for robust filtering
     duration_minutes: number;
     status: string;
     color: string;
@@ -32,6 +33,7 @@ export interface ExamResponse {
     };
     status: string;
     marks: number | null;
+    goal_status?: string; // Added for Study Goals
 }
 
 interface CalendarDay {
@@ -50,10 +52,14 @@ interface StudyPlannerContextType {
     isLoaded: boolean;
     isLoading: boolean;
     refreshData: () => Promise<void>;
+    refreshGoals: () => Promise<void>;
+    refreshTasks: () => Promise<void>;
+    refreshAll: () => Promise<void>;
     ensureDataLoaded: () => Promise<void>;
     // Optimistic Update Helpers
     updateTask: (updatedTask: StudyTask) => void;
     updateTasksBulk: (updatedTasks: StudyTask[]) => void;
+    addTasksBulk: (newTasks: StudyTask[]) => void;
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
     setUserEnergyPref: (pref: string) => void;
@@ -113,47 +119,69 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setCalendarDays(days);
     };
 
-    const fetchData = async () => {
-        if (!user) return; // Prevent fetching if no user session exists
+    const refreshGoals = async () => {
+        if (!user) return;
+        try {
+            const goalsRes = await api.get('/api/study-planner/goals');
+            const goals = goalsRes.data;
+
+            const mappedGoals: ExamResponse[] = goals.map((g: any) => ({
+                exam: {
+                    id: g.goal_id,
+                    title: toTitleCase(g.title),
+                    deadline: g.date || null,
+                    duration_minutes: 0
+                },
+                status: g.type,
+                marks: null,
+                goal_status: g.current_status
+            }));
+
+            const sortedGoals = mappedGoals.sort((a, b) => {
+                if (!a.exam.deadline) return 1;
+                if (!b.exam.deadline) return -1;
+                const dateA = new Date(a.exam.deadline).getTime();
+                const dateB = new Date(b.exam.deadline).getTime();
+                return dateA - dateB;
+            });
+
+            setExams(sortedGoals);
+        } catch (goalError) {
+            console.error("Failed to fetch goals:", goalError);
+            setExams([]);
+        }
+    };
+
+    const refreshTasks = async () => {
+        if (!user) return;
+        try {
+            const response = await api.get('/api/study-planner/tasks');
+            const newTasks = response.data.map((t: any) => ({
+                id: t.task_id,
+                title: toTitleCase(t.title),
+                task_type: t.title.toLowerCase().includes('exam') ? 'Exam' : 'Study',
+                start_time: t.task_time,
+                task_date: t.task_date,
+                duration_minutes: t.duration_minutes || 60,
+                status: t.task_status,
+                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary'
+            }));
+            setAllTasks(newTasks);
+            calculateCalendarRange(newTasks);
+        } catch (error) {
+            console.error("Failed to fetch tasks:", error);
+            setAllTasks([]);
+        }
+    };
+
+    const refreshAll = async () => {
+        if (!user) return;
         setIsLoading(true);
         try {
-            // 1. Preferences are now runtime-only, skipping redundant profile fetch
-
-            // 2. Fetch ALL Tasks (No date range filters)
-            const tasksRes = await api.get('/api/study-planner/tasks');
-            const tasks: StudyTask[] = (tasksRes.data as StudyTask[]).map(t => ({
-                ...t,
-                title: toTitleCase(t.title)
-            }));
-            setAllTasks(tasks);
-            calculateCalendarRange(tasks);
-
-            // 3. Process Exams (From Tasks - as per recent fix)
-            // Fetch Teacher Exams (Optional - skipped to avoid errors as per previous fix)
-            const teacherExams: ExamResponse[] = [];
-
-            // Extract Personal Exams from Tasks
-            const examTasks = tasks.filter(t =>
-                t.task_type.toLowerCase() === 'exam' ||
-                t.title.toLowerCase().includes('exam')
-            );
-
-            const convertedExams: ExamResponse[] = examTasks.map(t => ({
-                exam: {
-                    id: -t.id,
-                    title: t.title,
-                    deadline: t.start_time,
-                    duration_minutes: t.duration_minutes
-                },
-                status: 'personal',
-                marks: null
-            }));
-
-            const mergedExams = [...teacherExams, ...convertedExams].sort((a, b) =>
-                new Date(a.exam.deadline).getTime() - new Date(b.exam.deadline).getTime()
-            );
-            setExams(mergedExams);
-
+            await Promise.all([
+                refreshTasks(),
+                refreshGoals()
+            ]);
             setIsLoaded(true);
         } catch (error) {
             console.error("Error fetching study planner data:", error);
@@ -164,12 +192,12 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
 
     // Public Actions
     const refreshData = async () => {
-        await fetchData();
+        await refreshAll();
     };
 
     const ensureDataLoaded = async () => {
         if (!isLoaded && !isLoading) {
-            await fetchData();
+            await refreshAll();
         }
     };
 
@@ -198,6 +226,11 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setAllTasks(prev => [...prev, normalizedTask]);
     };
 
+    const addTasksBulk = (newTasks: StudyTask[]) => {
+        const normalized = newTasks.map(t => ({ ...t, title: toTitleCase(t.title) }));
+        setAllTasks(prev => [...prev, ...normalized]);
+    };
+
     // Reset on logout (if user becomes null)
     useEffect(() => {
         if (!user) {
@@ -205,7 +238,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             setExams([]);
             setIsLoaded(false);
         } else {
-            // Option: Auto-load on login? 
+            // Option: Auto-load on login?
             // Better to let the component trigger ensureDataLoaded to avoid eager loading if user isn't on planner.
         }
     }, [user]);
@@ -219,9 +252,13 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             isLoaded,
             isLoading,
             refreshData,
+            refreshGoals,
+            refreshTasks,
+            refreshAll,
             ensureDataLoaded,
             updateTask,
             updateTasksBulk,
+            addTasksBulk,
             deleteTask,
             addTask,
             setUserEnergyPref
