@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
+import CreateGoalModal from '../components/CreateGoalModal';
 import GeneratePlanModal from '../components/GeneratePlanModal';
 import EnergyPreferenceModal from '../components/EnergyPreferenceModal';
 import Toast, { type ToastType } from '../components/Toast';
@@ -18,18 +19,20 @@ const StudyPlanner = () => {
         calendarDays,
         userEnergyPref,
         isLoading: isGlobalLoading,
-        refreshData,
         ensureDataLoaded,
         updateTask: contextUpdateTask,
         updateTasksBulk: contextUpdateTasksBulk,
         deleteTask: contextDeleteTask,
-        setUserEnergyPref
+        setUserEnergyPref,
+        refreshGoals,
+        refreshAll
     } = useStudyPlanner();
 
     // Local UI State
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [isMuted, setIsMuted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
     const [isPeakHourModalOpen, setIsPeakHourModalOpen] = useState(false);
     const [isEnergyModalOpen, setIsEnergyModalOpen] = useState(false);
@@ -98,7 +101,7 @@ const StudyPlanner = () => {
     const handleRefresh = async () => {
         setIsMuted(true);
         try {
-            await refreshData();
+            await refreshAll();
             showToast('Schedule updated', 'success');
         } catch (error) {
             showToast('Failed to refresh', 'error');
@@ -264,7 +267,7 @@ const StudyPlanner = () => {
         } catch (error) {
             console.error("Error deleting task:", error);
             showToast('Failed to delete task', 'error');
-            refreshData(); // Sync on error
+            refreshAll(); // Sync on error
         }
     };
 
@@ -290,7 +293,7 @@ const StudyPlanner = () => {
             showToast('Task rescheduled', 'success');
         } catch (error) {
             console.error("Error updating task:", error);
-            refreshData();
+            refreshAll();
             showToast('Failed to reschedule', 'error');
         }
     };
@@ -327,7 +330,7 @@ const StudyPlanner = () => {
             showToast('AI suggestion applied', 'success');
         } catch (error) {
             console.error("Error applying AI suggestion:", error);
-            refreshData();
+            refreshAll();
             showToast('Failed to apply suggestion', 'error');
         }
     };
@@ -608,7 +611,13 @@ const StudyPlanner = () => {
                     {/* Upcoming Exams Section */}
                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-secondary-dark">Upcoming Exams</h3>
+                            <h3 className="text-lg font-bold text-secondary-dark">Your Goals</h3>
+                            <button
+                                onClick={() => setIsGoalModalOpen(true)}
+                                className="text-sm text-primary font-bold hover:bg-primary/5 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                                + Create Goal
+                            </button>
                         </div>
 
                         {exams.length === 0 ? (
@@ -618,37 +627,67 @@ const StudyPlanner = () => {
                         ) : (
                             <div className="space-y-4">
                                 {exams.map((item) => {
-                                    const examDate = new Date(item.exam.deadline);
+                                    // Handle null/invalid dates. If deadline is null, we treat as no date.
+                                    // In Context we map null to null, but here we passed it to new Date().
+                                    // Let's ensure context passes a value that new Date() handles or check here.
+                                    // Actually context passes null, new Date(null) is 1970.
+                                    const examDate = item.exam.deadline ? new Date(item.exam.deadline) : new Date(0); // 1970 fallback
+
                                     const today = new Date();
                                     const diffTime = examDate.getTime() - today.getTime();
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                                     return (
-                                        <div key={item.exam.id} className="grid grid-cols-[auto_1fr] gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
+                                        <div key={item.exam.id} className="grid grid-cols-[auto_1fr_auto] gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
                                             {/* Column 1: Date Badge */}
-                                            <div className="flex flex-col items-center justify-center w-14 h-14 bg-secondary-light/10 text-secondary-dark rounded-2xl font-bold border border-secondary-light/20">
-                                                <span className="text-xs text-secondary uppercase tracking-wider">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                                <span className="text-xl">{examDate.getDate()}</span>
+                                            <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl font-bold border ${examDate.getFullYear() === 1970
+                                                ? 'bg-secondary-light/5 text-secondary-light border-secondary-light/10'
+                                                : 'bg-secondary-light/10 text-secondary-dark border-secondary-light/20'}`}>
+                                                {examDate.getFullYear() === 1970 ? (
+                                                    <CalendarIcon className="w-6 h-6 opacity-50" />
+                                                ) : (
+                                                    <>
+                                                        <span className="text-xs text-secondary uppercase tracking-wider">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
+                                                        <span className="text-xl">{examDate.getDate()}</span>
+                                                    </>
+                                                )}
                                             </div>
 
-                                            {/* Column 2: Exam Info + Badge */}
+                                            {/* Column 2: Goal Info */}
                                             <div className="min-w-0 flex flex-col gap-1">
-                                                <h4 className="font-bold text-secondary-dark text-base leading-tight" title={item.exam.title}>
+                                                <h4 className="font-bold text-secondary-dark text-base leading-tight truncate" title={item.exam.title}>
                                                     {item.exam.title}
                                                 </h4>
 
                                                 <div className="flex items-center gap-3">
-                                                    <p className="text-xs text-secondary font-medium">
-                                                        {examDate.toLocaleDateString('en-US', { weekday: 'long' })}, {examDate.getFullYear()}
-                                                    </p>
-
-                                                    {/* Days Left Badge (Inline) */}
-                                                    <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${diffDays <= 3 ? 'bg-error/10 text-error' :
-                                                        diffDays <= 7 ? 'bg-warning/10 text-warning' :
-                                                            'bg-success/10 text-success'
+                                                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${item.status.toLowerCase() === 'exam'
+                                                        ? 'bg-primary/10 text-primary'
+                                                        : 'bg-secondary/10 text-secondary'
                                                         }`}>
-                                                        {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
-                                                    </div>
+                                                        {item.status}
+                                                    </span>
+
+                                                    {examDate.getFullYear() !== 1970 && (
+                                                        <>
+                                                            <span className="text-secondary-light/20">•</span>
+                                                            <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${diffDays <= 3 ? 'bg-error/10 text-error' :
+                                                                diffDays <= 7 ? 'bg-warning/10 text-warning' :
+                                                                    'bg-success/10 text-success'
+                                                                }`}>
+                                                                {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Column 3: Status Badge */}
+                                            <div>
+                                                <div className={`px-2.5 py-1 rounded-full text-xs font-bold capitalize ${item.goal_status === 'completed'
+                                                    ? 'bg-success/10 text-success'
+                                                    : 'bg-primary/5 text-primary'
+                                                    }`}>
+                                                    {item.goal_status || 'active'}
                                                 </div>
                                             </div>
                                         </div>
@@ -663,14 +702,22 @@ const StudyPlanner = () => {
                 <CreateTaskModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
-                    onTaskCreated={() => refreshData()}
+                    onTaskCreated={() => refreshAll()}
                     selectedDate={selectedDate}
+                />
+
+                <CreateGoalModal
+                    isOpen={isGoalModalOpen}
+                    onClose={() => setIsGoalModalOpen(false)}
+                    onGoalCreated={() => {
+                        refreshGoals();
+                    }}
                 />
 
                 <GeneratePlanModal
                     isOpen={isAIModalOpen}
                     onClose={() => setIsAIModalOpen(false)}
-                    onPlanGenerated={() => refreshData()}
+                    onPlanGenerated={() => refreshAll()}
                     energyPreference={userEnergyPref}
                 />
 
