@@ -180,3 +180,40 @@ def complete_ai_task(
     
     return {"message": "Task marked as completed", "task_id": task_id, "status": task.task_status}
 
+class TaskUpdate(BaseModel):
+    status: str
+
+@router.put("/tasks/{task_id}")
+def update_task_status(
+    task_id: int,
+    update_data: TaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Verify task ownership via student_id directly
+    # Check AI Tasks
+    task = db.query(CreateTaskAI).filter(
+        CreateTaskAI.task_id == task_id,
+        CreateTaskAI.student_id == current_user.id
+    ).first()
+
+    if task:
+        task.task_status = update_data.status
+        db.commit()
+        db.refresh(task)
+        return {"message": "Task updated", "task_id": task_id, "status": task.task_status}
+
+    # Check Manual Tasks (if not found in AI tasks)
+    manual_task = db.query(CreateTaskManual).filter(
+        CreateTaskManual.task_id == task_id,
+        CreateTaskManual.student_id == current_user.id
+    ).first()
+
+    if manual_task:
+        manual_task.status = update_data.status
+        db.commit()
+        db.refresh(manual_task)
+        return {"message": "Task updated", "task_id": task_id, "status": manual_task.status}
+    
+    raise HTTPException(status_code=404, detail="Task not found")
+

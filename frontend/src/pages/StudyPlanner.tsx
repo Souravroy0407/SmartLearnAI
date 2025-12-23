@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import CreateGoalModal from '../components/CreateGoalModal';
@@ -30,6 +30,7 @@ const StudyPlanner = () => {
     } = useStudyPlanner();
 
     // Local UI State
+    const [isGoalsExpanded, setIsGoalsExpanded] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [isMuted, setIsMuted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -100,6 +101,17 @@ const StudyPlanner = () => {
                 tDate.getFullYear() === selectedDate.getFullYear();
         });
     }, [allTasks, selectedDate, isAfterAllExams]);
+
+    // Derived State: Daily Goal Stats
+    const { completedCount, totalCount, progress } = useMemo(() => {
+        const total = dailyTasks.length;
+        const completed = dailyTasks.filter(t => t.status?.toLowerCase() === 'completed').length;
+        return {
+            completedCount: completed,
+            totalCount: total,
+            progress: total === 0 ? 0 : Math.round((completed / total) * 100)
+        };
+    }, [dailyTasks]);
 
     const handleRefresh = async () => {
         setIsMuted(true);
@@ -244,8 +256,22 @@ const StudyPlanner = () => {
         const task = allTasks.find(t => t.id === taskId);
         if (!task) return;
 
-        const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
-        const updatedTask = { ...task, status: newStatus };
+        // Toggle status: 'completed' <-> 'pending'
+        const isNowCompleted = currentStatus !== 'completed';
+        const newStatus = isNowCompleted ? 'completed' : 'pending';
+
+        // Update color based on status (success for completed, original/primary if pending)
+        // Note: Ideally we'd restore original priority color, but defaulting to primary is safe fallback
+        // If we want to preserve original color, we might need a separate field or logic.
+        // For now, let's assume 'bg-success' for completed, and revert to 'bg-primary' for pending 
+        // unless we know the original. A better approach is to keep color as priority and use a separate UI style for completion.
+        // However, the existing UI uses color for completion status too.
+
+        const updatedTask = {
+            ...task,
+            status: newStatus,
+            color: isNowCompleted ? 'bg-success' : 'bg-primary'
+        };
 
         try {
             // Optimistic update via Context
@@ -391,21 +417,43 @@ const StudyPlanner = () => {
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => {
-                                        const newDate = new Date(selectedDate);
-                                        newDate.setDate(newDate.getDate() - 7);
-                                        setSelectedDate(newDate);
+                                        const selectedIndex = calendarDays.findIndex(d =>
+                                            d.fullDate.getDate() === selectedDate.getDate() &&
+                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                        );
+                                        if (selectedIndex > 0) {
+                                            setSelectedDate(calendarDays[selectedIndex - 1].fullDate);
+                                        }
                                     }}
-                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors"
+                                    disabled={calendarDays.length === 0 ||
+                                        calendarDays.findIndex(d =>
+                                            d.fullDate.getDate() === selectedDate.getDate() &&
+                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                        ) <= 0}
+                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <ChevronRight className="w-5 h-5 text-secondary rotate-180" />
                                 </button>
                                 <button
                                     onClick={() => {
-                                        const newDate = new Date(selectedDate);
-                                        newDate.setDate(newDate.getDate() + 7);
-                                        setSelectedDate(newDate);
+                                        const selectedIndex = calendarDays.findIndex(d =>
+                                            d.fullDate.getDate() === selectedDate.getDate() &&
+                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                        );
+                                        if (selectedIndex < calendarDays.length - 1 && selectedIndex !== -1) {
+                                            setSelectedDate(calendarDays[selectedIndex + 1].fullDate);
+                                        }
                                     }}
-                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors"
+                                    disabled={calendarDays.length === 0 ||
+                                        calendarDays.findIndex(d =>
+                                            d.fullDate.getDate() === selectedDate.getDate() &&
+                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                        ) >= calendarDays.length - 1}
+                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <ChevronRight className="w-5 h-5 text-secondary" />
                                 </button>
@@ -442,18 +490,6 @@ const StudyPlanner = () => {
                                 <h3 className="text-lg font-bold text-secondary-dark">
                                     Schedule for {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
                                 </h3>
-                                {isExamDay && (
-                                    <span className="px-3 py-1 bg-error/10 text-error text-xs font-bold rounded-full border border-error/20 flex items-center gap-1.5 animate-pulse">
-                                        <div className="w-1.5 h-1.5 bg-error rounded-full" />
-                                        Exam Day
-                                    </span>
-                                )}
-                                {isRevisionDay && (
-                                    <span className="px-3 py-1 bg-warning/10 text-warning text-xs font-bold rounded-full border border-warning/20 flex items-center gap-1.5">
-                                        <Sparkles className="w-3 h-3" />
-                                        Revision Day
-                                    </span>
-                                )}
                             </div>
                             <div className="flex items-center gap-1">
                                 <button
@@ -592,20 +628,20 @@ const StudyPlanner = () => {
                         <p className="text-sm text-secondary mb-6">{selectedDate.toLocaleDateString('en-US', { weekday: 'long' })}'s Progress</p>
 
                         <div className="flex items-end gap-2 mb-2">
-                            <span className="text-4xl font-bold text-primary">{dailyTasks.filter(t => t.status === 'completed').length}</span>
-                            <span className="text-lg text-secondary-light font-medium mb-1">/ {dailyTasks.length} tasks</span>
+                            <span className="text-4xl font-bold text-primary">{completedCount}</span>
+                            <span className="text-lg text-secondary-light font-medium mb-1">/ {totalCount} tasks</span>
                         </div>
 
                         <div className="w-full h-3 bg-secondary-light/10 rounded-full overflow-hidden">
                             <div
                                 className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${dailyTasks.length === 0 ? 0 : Math.round((dailyTasks.filter(t => t.status === 'completed').length / dailyTasks.length) * 100)}%` }}
+                                style={{ width: `${progress}%` }}
                             ></div>
                         </div>
 
                         <p className="text-xs text-secondary mt-4 flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-warning" />
-                            {dailyTasks.filter(t => t.status === 'completed').length === dailyTasks.length && dailyTasks.length > 0
+                            {completedCount === totalCount && totalCount > 0
                                 ? "All caught up! Great job!"
                                 : "Keep going, you're doing great!"}
                         </p>
@@ -629,7 +665,7 @@ const StudyPlanner = () => {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {exams.map((item) => {
+                                {(isGoalsExpanded ? exams : exams.slice(0, 2)).map((item) => {
                                     // Handle null/invalid dates. If deadline is null, we treat as no date.
                                     // In Context we map null to null, but here we passed it to new Date().
                                     // Let's ensure context passes a value that new Date() handles or check here.
@@ -641,61 +677,75 @@ const StudyPlanner = () => {
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                                     return (
-                                        <div key={item.exam.id} className="grid grid-cols-[auto_1fr_auto] gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
-                                            {/* Column 1: Date Badge */}
-                                            <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-2xl font-bold border ${examDate.getFullYear() === 1970
+                                        <div key={item.exam.id} className="flex gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
+                                            {/* Column 1: Redesigned Date Badge */}
+                                            {/* [ 24 ] \n Wed \n 2025 */}
+                                            <div className={`flex flex-col items-center justify-center w-16 px-1 py-2 rounded-2xl border flex-shrink-0 ${examDate.getFullYear() === 1970
                                                 ? 'bg-secondary-light/5 text-secondary-light border-secondary-light/10'
-                                                : 'bg-secondary-light/10 text-secondary-dark border-secondary-light/20'}`}>
+                                                : 'bg-white text-secondary-dark border-secondary-light/20 shadow-sm'}`}>
                                                 {examDate.getFullYear() === 1970 ? (
                                                     <CalendarIcon className="w-6 h-6 opacity-50" />
                                                 ) : (
                                                     <>
-                                                        <span className="text-xs text-secondary uppercase tracking-wider">{examDate.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                                        <span className="text-xl">{examDate.getDate()}</span>
+                                                        <span className="text-2xl font-bold leading-none mb-1">{examDate.getDate()}</span>
+                                                        <div className="flex flex-col items-center leading-none gap-0.5">
+                                                            <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">
+                                                                {examDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                                                            </span>
+                                                            <span className="text-[10px] font-medium text-secondary-light">
+                                                                {examDate.getFullYear()}
+                                                            </span>
+                                                        </div>
                                                     </>
                                                 )}
                                             </div>
 
-                                            {/* Column 2: Goal Info */}
-                                            <div className="min-w-0 flex flex-col gap-1">
+                                            {/* Column 2: Goal Info (Single Flex Area) */}
+                                            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                                                 <h4 className="font-bold text-secondary-dark text-base leading-tight truncate" title={item.exam.title}>
                                                     {item.exam.title}
                                                 </h4>
 
+                                                {/* Single Row: Type Pill + Countdown */}
                                                 <div className="flex items-center gap-3">
-                                                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${item.status.toLowerCase() === 'exam'
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${item.status.toLowerCase() === 'exam'
                                                         ? 'bg-primary/10 text-primary'
                                                         : 'bg-secondary/10 text-secondary'
                                                         }`}>
                                                         {item.status}
                                                     </span>
 
-                                                    {examDate.getFullYear() !== 1970 && (
-                                                        <>
-                                                            <span className="text-secondary-light/20">•</span>
-                                                            <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${diffDays <= 3 ? 'bg-error/10 text-error' :
-                                                                diffDays <= 7 ? 'bg-warning/10 text-warning' :
-                                                                    'bg-success/10 text-success'
-                                                                }`}>
-                                                                {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
-                                                            </div>
-                                                        </>
+                                                    {/* Countdown (Inline) */}
+                                                    {item.status.toLowerCase() === 'exam' && item.goal_status !== 'completed' && examDate.getFullYear() !== 1970 && (
+                                                        <span className={`text-xs font-bold whitespace-nowrap ${diffDays <= 3 ? 'text-error' :
+                                                            diffDays <= 7 ? 'text-warning' :
+                                                                'text-secondary-light'
+                                                            }`}>
+                                                            {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
+                                                        </span>
                                                     )}
-                                                </div>
-                                            </div>
-
-                                            {/* Column 3: Status Badge */}
-                                            <div>
-                                                <div className={`px-2.5 py-1 rounded-full text-xs font-bold capitalize ${item.goal_status === 'completed'
-                                                    ? 'bg-success/10 text-success'
-                                                    : 'bg-primary/5 text-primary'
-                                                    }`}>
-                                                    {item.goal_status || 'active'}
                                                 </div>
                                             </div>
                                         </div>
                                     );
                                 })}
+
+                                {exams.length > 2 && (
+                                    <button
+                                        onClick={() => setIsGoalsExpanded(!isGoalsExpanded)}
+                                        className="w-full flex items-center justify-center gap-1.5 text-sm font-bold text-secondary hover:text-primary mt-2 transition-colors py-2 rounded-xl hover:bg-secondary/5"
+                                    >
+                                        {isGoalsExpanded ? (
+                                            <>
+                                                Show Less <ChevronUp className="w-4 h-4" />
+                                            </>
+                                        ) : (
+                                            <>
+                                                Show {exams.length - 2} More <ChevronDown className="w-4 h-4" />
+                                            </>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>
