@@ -66,7 +66,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
             console.log("POST about to be sent", payload);
 
             // NOTE: Using the newly created manual task endpoint
-            await api.post('/api/tasks/manual', payload);
+            await api.post('/api/study-planner/manual', payload);
 
             console.log("POST completed");
 

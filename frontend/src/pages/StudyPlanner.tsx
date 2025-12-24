@@ -41,10 +41,12 @@ const StudyPlanner = () => {
 
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
+    const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('bottom');
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
     const [goalToDelete, setGoalToDelete] = useState<any>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeletingGoal, setIsDeletingGoal] = useState(false);
+    const [isDeletingTask, setIsDeletingTask] = useState(false); // Task Deletion Loading State
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
@@ -281,7 +283,10 @@ const StudyPlanner = () => {
             contextUpdateTask(updatedTask);
 
             if (task.is_manual) {
-                await api.put(`/api/tasks/manual/${taskId}`, { status: newStatus });
+                // Unified endpoint handles both, but context logic separates them slightly?
+                // Actually the unified update endpoint `PUT /api/study-planner/tasks/{id}` works for both now.
+                // Reverting to unified call.
+                await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
             } else {
                 await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
             }
@@ -295,16 +300,30 @@ const StudyPlanner = () => {
     const handleDeleteTask = async () => {
         if (!taskToDelete) return;
 
+        setIsDeletingTask(true); // Start loading
+
         try {
-            // Optimistic update via Context
+            console.log("Deleting task_id:", taskToDelete.task_id);
+
+            // Conditional delete based on source_type (backend task_type)
+            if (taskToDelete.source_type === 'manual') {
+                await api.delete(`/api/study-planner/tasks/manual/${taskToDelete.task_id}`);
+            } else {
+                // Default to AI task deletion (covers 'ai' and fallback)
+                await api.delete(`/api/study-planner/tasks/ai/${taskToDelete.task_id}`);
+            }
+
+            // Update state ONLY after successful API response
+            // Note: Context still uses internal 'id' for state management
             contextDeleteTask(taskToDelete.id);
-            setTaskToDelete(null); // Close modal immediately
-            await api.delete(`/api/study-planner/tasks/${taskToDelete.id}`);
+            setTaskToDelete(null); // Close modal only on success
             showToast('Task deleted', 'success');
         } catch (error) {
             console.error("Error deleting task:", error);
             showToast('Failed to delete task', 'error');
-            refreshAll(); // Sync on error
+            // Do not close modal on error so user can retry
+        } finally {
+            setIsDeletingTask(false); // Stop loading in all cases
         }
     };
 
@@ -400,11 +419,21 @@ const StudyPlanner = () => {
         }
     };
 
-    // Close menu when clicking outside
+    // Close menu when clicking outside or pressing Escape
     useEffect(() => {
         const handleClickOutside = () => setActiveMenuTaskId(null);
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setActiveMenuTaskId(null);
+        };
+
         window.addEventListener('click', handleClickOutside);
-        return () => window.removeEventListener('click', handleClickOutside);
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('click', handleClickOutside);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
     }, []);
 
     const formatTime = (isoString: string) => {
@@ -563,94 +592,110 @@ const StudyPlanner = () => {
                             </div>
                         ) : (
                             <div className={`space-y-4 ${isMuted ? 'opacity-50 pointer-events-none' : ''}`}>
-                                {dailyTasks.map((task, index) => (
-                                    <motion.div
-                                        key={task.id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: index * 0.1 }}
-                                        className="group bg-white p-5 rounded-2xl shadow-sm border border-secondary-light/20 hover:shadow-md transition-all flex items-center gap-4"
-                                    >
-                                        <div className="flex flex-col items-center gap-1 min-w-[80px]">
-                                            <span className="text-sm font-bold text-secondary-dark">{formatTime(task.start_time)}</span>
-                                            <span className="text-xs text-secondary-light">{formatDuration(task.duration_minutes)}</span>
-                                        </div>
+                                {dailyTasks.map((task, index) => {
+                                    // SAFE COLOR LOGIC:
+                                    // AI tasks do not have colourtag, Manual tasks do.
+                                    // We fallback to 'bg-primary' to prevent crashes.
+                                    const taskColor = (task as any).colourtag || task.color || 'bg-primary';
 
-                                        <div className={`w-1.5 h-12 rounded-full ${task.color} opacity-20 group-hover:opacity-100 transition-opacity`}></div>
-
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${task.color.replace('bg-', 'bg-')}/10 text-${task.color.replace('bg-', '')}`}>
-                                                    {task.task_type}
-                                                </span>
-                                                {task.status === 'completed' && (
-                                                    <CheckCircle2 className="w-4 h-4 text-success" />
-                                                )}
-                                            </div>
-                                            <h4 className={`font-bold text-secondary-dark ${task.status === 'completed' ? 'line-through opacity-50' : ''}`}>
-                                                {task.title}
-                                            </h4>
-                                        </div>
-
-                                        <button
-                                            onClick={() => handleTaskCompletion(task.id, task.status)}
-                                            className={`p-2 rounded-lg transition-colors ${task.status === 'completed' ? 'text-success bg-success/10' : 'text-secondary-light hover:text-primary hover:bg-primary/10'}`}
-                                            title={task.status === 'completed' ? "Mark as pending" : "Mark as completed"}
+                                    return (
+                                        <motion.div
+                                            key={task.id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: index * 0.1 }}
+                                            className="group bg-white p-5 rounded-2xl shadow-sm border border-secondary-light/20 hover:shadow-md transition-all flex items-center gap-4"
                                         >
-                                            <CheckCircle2 className="w-5 h-5" />
-                                        </button>
+                                            <div className="flex flex-col items-center gap-1 min-w-[80px]">
+                                                <span className="text-sm font-bold text-secondary-dark">{formatTime(task.start_time)}</span>
+                                                <span className="text-xs text-secondary-light">{formatDuration(task.duration_minutes)}</span>
+                                            </div>
 
-                                        <div className="relative">
+                                            <div className={`w-1.5 h-12 rounded-full ${taskColor} opacity-20 group-hover:opacity-100 transition-opacity`}></div>
+
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${taskColor.replace('bg-', 'bg-')}/10 text-${taskColor.replace('bg-', '')}`}>
+                                                        {task.task_type}
+                                                    </span>
+                                                    {task.status === 'completed' && (
+                                                        <CheckCircle2 className="w-4 h-4 text-success" />
+                                                    )}
+                                                </div>
+                                                <h4 className={`font-bold text-secondary-dark ${task.status === 'completed' ? 'line-through opacity-50' : ''}`}>
+                                                    {task.title}
+                                                </h4>
+                                            </div>
+
                                             <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setActiveMenuTaskId(activeMenuTaskId === task.id ? null : task.id);
-                                                }}
-                                                className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                onClick={() => handleTaskCompletion(task.id, task.status)}
+                                                className={`p-2 rounded-lg transition-colors ${task.status === 'completed' ? 'text-success bg-success/10' : 'text-secondary-light hover:text-primary hover:bg-primary/10'}`}
+                                                title={task.status === 'completed' ? "Mark as pending" : "Mark as completed"}
                                             >
-                                                <MoreVertical className="w-5 h-5" />
+                                                <CheckCircle2 className="w-5 h-5" />
                                             </button>
 
-                                            {activeMenuTaskId === task.id && (
-                                                <div
-                                                    className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-secondary-light/20 overflow-hidden z-10"
-                                                    onClick={(e) => e.stopPropagation()}
+                                            <div className="relative">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Smart Positioning Logic
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        const spaceBelow = window.innerHeight - rect.bottom;
+                                                        const menuHeight = 200; // Approximate height
+
+                                                        // Prefer DOWN, fallback UP if not enough space
+                                                        setMenuPlacement(spaceBelow < (menuHeight + 20) ? 'top' : 'bottom');
+
+                                                        setActiveMenuTaskId(activeMenuTaskId === task.id ? null : task.id);
+                                                    }}
+                                                    className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                                                 >
-                                                    <button
-                                                        onClick={() => {
-                                                            setTaskToReschedule(task);
-                                                            setActiveMenuTaskId(null);
-                                                        }}
-                                                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                    <MoreVertical className="w-5 h-5" />
+                                                </button>
+
+                                                {activeMenuTaskId === task.id && (
+                                                    <div
+                                                        className={`absolute right-0 w-56 bg-white rounded-xl shadow-lg border border-secondary-light/20 overflow-hidden z-10 ${menuPlacement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'
+                                                            }`}
+                                                        onClick={(e) => e.stopPropagation()}
                                                     >
-                                                        <Edit3 className="w-4 h-4" />
-                                                        Reschedule Manually
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            handleRescheduleAIClick(task);
-                                                            setActiveMenuTaskId(null);
-                                                        }}
-                                                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
-                                                    >
-                                                        <Sparkles className="w-4 h-4" />
-                                                        Reschedule with AI
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setTaskToDelete(task);
-                                                            setActiveMenuTaskId(null);
-                                                        }}
-                                                        className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                        Delete Task
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                ))}
+                                                        <button
+                                                            onClick={() => {
+                                                                setTaskToReschedule(task);
+                                                                setActiveMenuTaskId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                            Reschedule Manually
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                handleRescheduleAIClick(task);
+                                                                setActiveMenuTaskId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <Sparkles className="w-4 h-4" />
+                                                            Reschedule with AI
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setTaskToDelete(task);
+                                                                setActiveMenuTaskId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                            Delete Task
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -905,15 +950,24 @@ const StudyPlanner = () => {
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setTaskToDelete(null)}
-                                        className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                        disabled={isDeletingTask}
+                                        className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={handleDeleteTask}
-                                        className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                        disabled={isDeletingTask}
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Delete Task
+                                        {isDeletingTask ? (
+                                            <>
+                                                <Loader2 className="w-5 h-5 animate-spin" />
+                                                Deleting...
+                                            </>
+                                        ) : (
+                                            'Delete Task'
+                                        )}
                                     </button>
                                 </div>
                             </div>

@@ -15,6 +15,7 @@ const toTitleCase = (str: string) => {
 // Types (Moved from StudyPlanner.tsx)
 export interface StudyTask {
     id: number;
+    task_id: number; // Added for explicit backend ID matching
     title: string;
     task_type: string;
     start_time: string;
@@ -23,6 +24,7 @@ export interface StudyTask {
     status: string;
     color: string;
     is_manual?: boolean; // Added for Manual Task differentiation
+    source_type?: 'ai' | 'manual'; // Added for conditional delete logic
 }
 
 export interface ExamResponse {
@@ -159,6 +161,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             const response = await api.get('/api/study-planner/tasks');
             const newTasks = response.data.map((t: any) => ({
                 id: t.task_id,
+                task_id: t.task_id, // Map explicitly
                 title: toTitleCase(t.title),
                 task_type: t.title.toLowerCase().includes('exam') ? 'Exam' : 'Study',
                 start_time: t.task_time,
@@ -166,7 +169,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
                 duration_minutes: t.duration_minutes || 60,
                 status: t.task_status,
                 color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary',
-                is_manual: t.is_manual || false
+                is_manual: t.is_manual || false,
+                source_type: t.task_type || (t.is_manual ? 'manual' : 'ai') // Map backend task_type or fallback
             }));
             setAllTasks(newTasks);
             calculateCalendarRange(newTasks);
