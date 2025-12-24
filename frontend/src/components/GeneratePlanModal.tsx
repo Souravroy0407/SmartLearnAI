@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import Modal from './Modal';
 import api from '../api/axios';
@@ -7,7 +7,7 @@ interface GeneratePlanModalProps {
     isOpen: boolean;
     onClose: () => void;
     onPlanGenerated: (newTasks: any[]) => void;
-    goals: { id: number; title: string }[];
+    goals: { id: number; title: string; deadline?: string }[];
 }
 
 const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, goals }: GeneratePlanModalProps) => {
@@ -18,6 +18,26 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, goals }: Generate
     const [hoursPerDay, setHoursPerDay] = useState(2);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState('');
+
+    // Derived state: check if selected goal is an exam with a deadline
+    const selectedGoal = goals.find(g => g.id === Number(selectedGoalId));
+    const isExamGoal = !!(selectedGoal && selectedGoal.deadline);
+
+    // Effect: Enforce End Date Constraint for Exam Goals
+    // Rule: End Date = Deadline - 1 Day
+    // This runs immediately when a goal is selected
+    useEffect(() => {
+        if (isExamGoal && selectedGoal?.deadline) {
+            const deadlineDate = new Date(selectedGoal.deadline);
+            // Subtract 1 day
+            deadlineDate.setDate(deadlineDate.getDate() - 1);
+
+            const autoEndDate = deadlineDate.toISOString().split('T')[0];
+            setEndDate(autoEndDate);
+        }
+    }, [selectedGoalId, isExamGoal, selectedGoal]);
+
+    // ... existing handleSubmit ...
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -46,6 +66,7 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, goals }: Generate
         }
     };
 
+    // ... existing footer ...
     const footer = (
         <div className="flex justify-end gap-3">
             <button
@@ -87,6 +108,7 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, goals }: Generate
                 }
                 handleSubmit(e);
             }} className="space-y-4">
+                {/* ... existing header ... */}
                 <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 flex items-start gap-3">
                     <Sparkles className="w-5 h-5 text-primary mt-0.5 shrink-0" />
                     <p className="text-sm text-secondary-dark leading-relaxed">
@@ -143,14 +165,24 @@ const GeneratePlanModal = ({ isOpen, onClose, onPlanGenerated, goals }: Generate
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-secondary-dark mb-1">End Date</label>
-                        <input
-                            type="date"
-                            required
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            min={startDate || new Date().toISOString().split('T')[0]}
-                            className="w-full px-4 py-2 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        />
+                        {/* Exam Goal Constraint Logic */}
+                        <div className="relative">
+                            <input
+                                type="date"
+                                required
+                                value={endDate}
+                                onChange={(e) => !isExamGoal && setEndDate(e.target.value)}
+                                min={startDate || new Date().toISOString().split('T')[0]}
+                                disabled={isExamGoal} // Disable manual edit for exams
+                                className={`w-full px-4 py-2 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50 ${isExamGoal ? 'bg-secondary-light/10 text-secondary cursor-not-allowed' : ''
+                                    }`}
+                            />
+                            {isExamGoal && (
+                                <p className="text-[10px] text-primary mt-1 font-medium">
+                                    Ends one day before exam.
+                                </p>
+                            )}
+                        </div>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-secondary-dark mb-1">Hours / Day</label>

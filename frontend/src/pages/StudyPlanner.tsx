@@ -1038,7 +1038,7 @@ const StudyPlanner = () => {
                     addTasksBulk(newTasks);
                     refreshGoals(); // Refresh goals to ensure consistency/status updates if any
                 }}
-                goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title }))}
+                goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title, deadline: e.exam.deadline }))}
             />
 
             <EnergyPreferenceModal
