@@ -42,6 +42,9 @@ const StudyPlanner = () => {
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [activeMenuTaskId, setActiveMenuTaskId] = useState<number | null>(null);
     const [taskToDelete, setTaskToDelete] = useState<StudyTask | null>(null);
+    const [goalToDelete, setGoalToDelete] = useState<any>(null);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isDeletingGoal, setIsDeletingGoal] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
@@ -304,8 +307,36 @@ const StudyPlanner = () => {
         setToast({ message, type });
     };
 
+
     // Exam deletion functions removed as they are no longer used
 
+    const handleDeleteGoal = (goalItem: any) => {
+        setGoalToDelete(goalItem);
+        setIsDeleteModalOpen(true);
+    };
+
+    const confirmDeleteGoal = async () => {
+        if (!goalToDelete) return;
+
+        setIsDeleteModalOpen(false); // Close confirm modal immediately to show loading screen
+        setIsDeletingGoal(true); // Show loading screen
+
+        try {
+            await api.delete(`/api/goals/${goalToDelete.exam.id}`);
+
+            // Optimistic update handled by refreshGoals
+            await refreshGoals();
+            await refreshAll(); // Clear related tasks from calendar
+
+            setGoalToDelete(null);
+            showToast('Goal deleted successfully', 'success');
+        } catch (error) {
+            console.error("Error deleting goal:", error);
+            showToast('Failed to delete goal', 'error');
+        } finally {
+            setIsDeletingGoal(false); // Hide loading screen
+        }
+    };
 
     const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
         if (!taskToReschedule) return;
@@ -677,7 +708,7 @@ const StudyPlanner = () => {
                                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                                     return (
-                                        <div key={item.exam.id} className="flex gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
+                                        <div key={item.exam.id} className="relative flex gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
                                             {/* Column 1: Redesigned Date Badge */}
                                             {/* [ 24 ] \n Wed \n 2025 */}
                                             <div className={`flex flex-col items-center justify-center w-16 px-1 py-2 rounded-2xl border flex-shrink-0 ${examDate.getFullYear() === 1970
@@ -726,6 +757,18 @@ const StudyPlanner = () => {
                                                     )}
                                                 </div>
                                             </div>
+
+                                            {/* Delete Button (Hover Only) */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteGoal(item);
+                                                }}
+                                                className="absolute top-2 right-2 p-1.5 text-secondary-light/50 hover:text-error hover:bg-error/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                                                title="Delete Goal"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
                                     );
                                 })}
@@ -751,156 +794,216 @@ const StudyPlanner = () => {
                     </div>
                 </div>
 
+            </div>
 
-                <CreateTaskModal
-                    isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
-                    onTaskCreated={() => refreshAll()}
-                    selectedDate={selectedDate}
-                />
+            <CreateTaskModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onTaskCreated={() => refreshAll()}
+                selectedDate={selectedDate}
+            />
 
-                <CreateGoalModal
-                    isOpen={isGoalModalOpen}
-                    onClose={() => setIsGoalModalOpen(false)}
-                    onGoalCreated={() => {
-                        refreshGoals();
-                    }}
-                />
+            <CreateGoalModal
+                isOpen={isGoalModalOpen}
+                onClose={() => setIsGoalModalOpen(false)}
+                onGoalCreated={() => {
+                    refreshGoals();
+                }}
+            />
 
-                <GeneratePlanModal
-                    isOpen={isAIModalOpen}
-                    onClose={() => setIsAIModalOpen(false)}
-                    onPlanGenerated={(newTasks) => {
-                        addTasksBulk(newTasks);
-                        refreshGoals(); // Refresh goals to ensure consistency/status updates if any
-                    }}
-                    goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title }))}
-                />
+            <GeneratePlanModal
+                isOpen={isAIModalOpen}
+                onClose={() => setIsAIModalOpen(false)}
+                onPlanGenerated={(newTasks) => {
+                    addTasksBulk(newTasks);
+                    refreshGoals(); // Refresh goals to ensure consistency/status updates if any
+                }}
+                goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title }))}
+            />
 
-                <EnergyPreferenceModal
-                    isOpen={isEnergyModalOpen}
-                    onClose={() => setIsEnergyModalOpen(false)}
-                    onSelect={handleEnergySelect}
-                />
+            <EnergyPreferenceModal
+                isOpen={isEnergyModalOpen}
+                onClose={() => setIsEnergyModalOpen(false)}
+                onSelect={handleEnergySelect}
+            />
 
-                <EnergyPreferenceModal
-                    isOpen={isPeakHourModalOpen}
-                    onClose={() => setIsPeakHourModalOpen(false)}
-                    onSelect={handlePeakHourUpdate}
-                    title="Choose your Peak Study Hour"
-                    selectedPreference={userEnergyPref}
-                />
-                {
-                    isOptimizing && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
-                            >
-                                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
-                                    <Sparkles className="w-8 h-8 animate-pulse" />
+            <EnergyPreferenceModal
+                isOpen={isPeakHourModalOpen}
+                onClose={() => setIsPeakHourModalOpen(false)}
+                onSelect={handlePeakHourUpdate}
+                title="Choose your Peak Study Hour"
+                selectedPreference={userEnergyPref}
+            />
+            {
+                isOptimizing && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4"
+                        >
+                            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 text-primary">
+                                <Sparkles className="w-8 h-8 animate-pulse" />
+                            </div>
+                            <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
+                            <p className="text-secondary text-center mb-6">
+                                Optimizing your study plan for your peak hours...
+                            </p>
+                            <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                        </motion.div>
+                    </div>
+                )
+            }
+
+
+
+            {/* Toast Notification */}
+            {
+                toast && (
+                    <Toast
+                        message={toast.message}
+                        type={toast.type}
+                        onClose={() => setToast(null)}
+                    />
+                )
+            }
+
+            {/* Delete Confirmation Modal (Task) */}
+            {
+                taskToDelete && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                        >
+                            <div className="p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                        <Trash2 className="w-6 h-6" />
+                                    </div>
+                                    <button
+                                        onClick={() => setTaskToDelete(null)}
+                                        className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
                                 </div>
-                                <h3 className="text-xl font-bold text-secondary-dark mb-2 text-center">Optimizing Schedule</h3>
-                                <p className="text-secondary text-center mb-6">
-                                    Optimizing your study plan for your peak hours...
+
+                                <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
+                                <p className="text-secondary mb-6">
+                                    Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
+                                    This action cannot be undone.
                                 </p>
-                                <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                            </motion.div>
-                        </div>
-                    )
-                }
 
-
-
-                {/* Toast Notification */}
-                {
-                    toast && (
-                        <Toast
-                            message={toast.message}
-                            type={toast.type}
-                            onClose={() => setToast(null)}
-                        />
-                    )
-                }
-
-                {/* Delete Confirmation Modal (Task) */}
-                {
-                    taskToDelete && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.95 }}
-                                className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
-                            >
-                                <div className="p-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
-                                            <Trash2 className="w-6 h-6" />
-                                        </div>
-                                        <button
-                                            onClick={() => setTaskToDelete(null)}
-                                            className="p-2 text-secondary-light hover:text-secondary hover:bg-secondary-light/10 rounded-full transition-colors"
-                                        >
-                                            <X className="w-5 h-5" />
-                                        </button>
-                                    </div>
-
-                                    <h3 className="text-xl font-bold text-secondary-dark mb-2">Delete this task?</h3>
-                                    <p className="text-secondary mb-6">
-                                        Are you sure you want to delete <span className="font-bold text-secondary-dark">"{taskToDelete.title}"</span>?
-                                        This action cannot be undone.
-                                    </p>
-
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => setTaskToDelete(null)}
-                                            className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={handleDeleteTask}
-                                            className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
-                                        >
-                                            Delete Task
-                                        </button>
-                                    </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setTaskToDelete(null)}
+                                        className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleDeleteTask}
+                                        className="flex-1 px-4 py-3 bg-error text-white font-medium rounded-xl hover:bg-error/90 transition-colors shadow-lg shadow-error/20"
+                                    >
+                                        Delete Task
+                                    </button>
                                 </div>
-                            </motion.div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )
+            }
+
+
+            {/* Reschedule Modal */}
+            {
+                taskToReschedule && (
+                    <RescheduleModal
+                        task={taskToReschedule}
+                        onClose={() => setTaskToReschedule(null)}
+                        onSave={handleRescheduleSave}
+                    />
+                )
+            }
+
+            {/* AI Reschedule Suggestion Modal */}
+            {/* AI Reschedule Suggestion Modal */}
+            {
+                (taskToRescheduleAI || isFetchingAI) && (
+                    <RescheduleAIModal
+                        task={taskToRescheduleAI}
+                        suggestions={aiSuggestions}
+                        isLoading={isFetchingAI}
+                        onClose={() => {
+                            setTaskToRescheduleAI(null);
+                            setAiSuggestions([]);
+                        }}
+                        onSelect={handleApplyAISuggestion}
+                    />
+                )
+            }
+
+            {/* Delete Goal Confirmation Modal */}
+            {
+                isDeleteModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                        >
+                            <div className="flex flex-col items-center text-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-2">
+                                    <Trash2 className="w-6 h-6" />
+                                </div>
+
+                                <div>
+                                    <h3 className="text-lg font-bold text-secondary-dark mb-2">Delete Goal?</h3>
+                                    <p className="text-sm text-secondary">
+                                        Are you sure you want to delete <span className="font-bold">"{goalToDelete?.exam.title}"</span>?
+                                        This will permanently remove the study plan and all associated tasks.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-3 w-full mt-2">
+                                    <button
+                                        onClick={() => setIsDeleteModalOpen(false)}
+                                        className="flex-1 py-3 px-4 rounded-xl font-bold text-secondary bg-secondary-light/10 hover:bg-secondary-light/20 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={confirmDeleteGoal}
+                                        className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-error hover:bg-error/90 shadow-lg shadow-error/20 transition-colors"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )
+            }
+
+            {/* Deleting Goal Overlay */}
+            {isDeletingGoal && (
+                <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm text-center"
+                    >
+                        <div className="w-16 h-16 bg-error/10 rounded-full flex items-center justify-center mb-4">
+                            <Loader2 className="w-8 h-8 text-error animate-spin" />
                         </div>
-                    )
-                }
-
-
-                {/* Reschedule Modal */}
-                {
-                    taskToReschedule && (
-                        <RescheduleModal
-                            task={taskToReschedule}
-                            onClose={() => setTaskToReschedule(null)}
-                            onSave={handleRescheduleSave}
-                        />
-                    )
-                }
-
-                {/* AI Reschedule Suggestion Modal */}
-                {
-                    (taskToRescheduleAI || isFetchingAI) && (
-                        <RescheduleAIModal
-                            task={taskToRescheduleAI}
-                            suggestions={aiSuggestions}
-                            isLoading={isFetchingAI}
-                            onClose={() => {
-                                setTaskToRescheduleAI(null);
-                                setAiSuggestions([]);
-                            }}
-                            onSelect={handleApplyAISuggestion}
-                        />
-                    )
-                }
-            </div >
+                        <h3 className="text-xl font-bold text-secondary-dark mb-2">Deleting your goal...</h3>
+                        <p className="text-secondary-light">Please wait. This may take a moment while we clean up your schedule.</p>
+                    </motion.div>
+                </div>
+            )}
         </div >
     );
 };
