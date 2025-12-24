@@ -85,7 +85,7 @@ const StudyPlanner = () => {
     // Derived State: Filter Tasks for Selected Date
     // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
-        if (isAfterAllExams) return [];
+        // if (isAfterAllExams) return []; // Removed to allow tasks beyond exam dates (e.g. generic goals)
 
         const year = selectedDate.getFullYear();
         const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
@@ -382,40 +382,152 @@ const StudyPlanner = () => {
         }
     };
 
-    const handleRescheduleAIClick = async (task: StudyTask) => {
+    // --- Smart Local Rescheduling Logic ---
+    // --- Smart Local Rescheduling Logic (Optimized) ---
+    const findSmartSlots = (taskToMove: StudyTask) => {
+        const slotsFound = [];
+        const taskDate = new Date(taskToMove.start_time);
+
+        // 1. Determine Week Range
+        const currentDay = taskDate.getDay();
+        const diffToMon = currentDay === 0 ? -6 : 1 - currentDay;
+
+        const monday = new Date(taskDate);
+        monday.setDate(taskDate.getDate() + diffToMon);
+        monday.setHours(0, 0, 0, 0);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Optimization: Pre-group all tasks by date string (YYYY-MM-DD)
+        // This makes the lookup O(1) inside the loop instead of O(N) filtering
+        const tasksByDate = new Map<string, StudyTask[]>();
+
+        allTasks.forEach(t => {
+            if (t.id === taskToMove.id) return; // Exclude self
+
+            let dateKey = t.task_date;
+            if (!dateKey) {
+                const d = new Date(t.start_time);
+                dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+
+            if (!tasksByDate.has(dateKey)) {
+                tasksByDate.set(dateKey, []);
+            }
+            tasksByDate.get(dateKey)?.push(t);
+        });
+
+        // check 7 days of the week
+        for (let i = 0; i < 7; i++) {
+            const checkDate = new Date(monday);
+            checkDate.setDate(monday.getDate() + i);
+
+            // 2. Filter Past Dates
+            if (checkDate < today) continue;
+
+            const dayString = checkDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+
+            // 3. Setup Day Boundaries (8:00 AM - 10:00 PM)
+            const dayStart = new Date(checkDate);
+            dayStart.setHours(8, 0, 0, 0);
+
+            const dayEnd = new Date(checkDate);
+            dayEnd.setHours(22, 0, 0, 0);
+
+            // 4. Get Tasks (O(1) Map Lookup + small Sort)
+            const tasksForDay = (tasksByDate.get(dateStr) || [])
+                .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+            // 5. Gap Finding
+            const requiredDurationMs = taskToMove.duration_minutes * 60 * 1000;
+            const bufferMs = 15 * 60 * 1000;
+            let currentPointer = dayStart.getTime();
+            const daySlots = [];
+
+            for (const t of tasksForDay) {
+                const tStart = new Date(t.start_time).getTime();
+                const tEnd = tStart + (t.duration_minutes * 60 * 1000);
+
+                // Check gap before this task
+                if (currentPointer + requiredDurationMs <= tStart) {
+                    daySlots.push({
+                        start: new Date(currentPointer).toISOString(),
+                        end: new Date(currentPointer + requiredDurationMs).toISOString()
+                    });
+                }
+                currentPointer = Math.max(currentPointer, tEnd + bufferMs);
+            }
+
+            // Check after last task
+            if (currentPointer + requiredDurationMs <= dayEnd.getTime()) {
+                daySlots.push({
+                    start: new Date(currentPointer).toISOString(),
+                    end: new Date(currentPointer + requiredDurationMs).toISOString()
+                });
+            }
+
+            if (daySlots.length > 0) {
+                slotsFound.push({
+                    date: dayString,
+                    iso_date: checkDate.toISOString(),
+                    slots: daySlots
+                });
+            }
+        }
+
+        return slotsFound;
+    };
+
+    const handleRescheduleSmartClick = (task: StudyTask) => {
+        setTaskToRescheduleAI(task);
+        setIsFetchingAI(true);
+        setAiSuggestions([]);
+
+        // Instant execution (No artificial delay)
+        // Wrapped in requestAnimationFrame to ensure modal opens smoothly first if needed, 
+        // but simple sync call is usually fastest for "instant" feel.
+        // We'll use a specific immediate execution.
         try {
-            setTaskToRescheduleAI(task);
-            setIsFetchingAI(true);
-            const response = await api.post(`/api/study-planner/tasks/${task.id}/reschedule-suggestions`);
-            setAiSuggestions(response.data);
-        } catch (error) {
-            console.error("Error fetching AI suggestions:", error);
+            const slots = findSmartSlots(task);
+            setAiSuggestions(slots);
+        } catch (e) {
+            console.error("Error calculating slots", e);
         } finally {
             setIsFetchingAI(false);
         }
     };
 
-    const handleApplyAISuggestion = async (suggestion: any) => {
+    const handleApplySmartSuggestion = async (suggestion: any) => {
         if (!taskToRescheduleAI) return;
 
         try {
-            const updatedPart = {
-                start_time: suggestion.iso_start_time
+            const payload = {
+                task_date: suggestion.iso_start_time.split('T')[0],
+                task_time: suggestion.iso_start_time,
+                status: taskToRescheduleAI.status
             };
 
-            const task = allTasks.find(t => t.id === taskToRescheduleAI.id);
-            if (task) {
-                contextUpdateTask({ ...task, ...updatedPart });
-            }
+            // Calculate new end time for state update
+            // Optimistic Update
+            contextUpdateTask({
+                ...taskToRescheduleAI,
+                start_time: suggestion.iso_start_time
+                // end_time is not tracked in frontend state explicitly for StudyTask,
+                // it is derived or backend only.
+            });
 
-            await api.put(`/api/study-planner/tasks/${taskToRescheduleAI.id}`, updatedPart);
-            setTaskToRescheduleAI(null);
-            setAiSuggestions([]);
-            showToast('AI suggestion applied', 'success');
+            // ... rest of logic
+            await api.put(`/api/study-planner/tasks/${taskToRescheduleAI.id}`, payload);
+
+            showToast('Rescheduled successfully', 'success');
+            setTaskToRescheduleAI(null); // Close modal
         } catch (error) {
-            console.error("Error applying AI suggestion:", error);
+            console.error("Failed to apply smart suggestion", error);
+            // Revert on error (fetch fresh)
             refreshAll();
-            showToast('Failed to apply suggestion', 'error');
+            showToast('Failed to reschedule', 'error');
         }
     };
 
@@ -672,13 +784,13 @@ const StudyPlanner = () => {
                                                         </button>
                                                         <button
                                                             onClick={() => {
-                                                                handleRescheduleAIClick(task);
+                                                                handleRescheduleSmartClick(task);
                                                                 setActiveMenuTaskId(null);
                                                             }}
                                                             className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
                                                         >
                                                             <Sparkles className="w-4 h-4" />
-                                                            Reschedule with AI
+                                                            Smart Reschedule
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -1000,7 +1112,7 @@ const StudyPlanner = () => {
                             setTaskToRescheduleAI(null);
                             setAiSuggestions([]);
                         }}
-                        onSelect={handleApplyAISuggestion}
+                        onSelect={handleApplySmartSuggestion}
                     />
                 )
             }
@@ -1192,71 +1304,158 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
     );
 };
 
-// AI Reschedule Modal
+// AI/Smart Reschedule Modal
 function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) {
+    const [selectedDateIdx, setSelectedDateIdx] = useState<number | null>(null);
+    const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
+
+    // Auto-select first date when suggestions load
+    useEffect(() => {
+        if (suggestions.length > 0 && selectedDateIdx === null) {
+            setSelectedDateIdx(0);
+        }
+    }, [suggestions]);
+
+    const activeDate = selectedDateIdx !== null ? suggestions[selectedDateIdx] : null;
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+                className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col md:flex-row max-h-[80vh]"
             >
-                <div className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-16 h-16 bg-secondary-light/10 rounded-2xl flex items-center justify-center mx-auto mb-4 text-secondary-light">
-                                <CalendarIcon className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-xl font-bold text-secondary-dark">AI Reschedule</h3>
-                        </div>
-                        <button onClick={onClose} className="p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
-                            <X className="w-5 h-5 text-secondary" />
-                        </button>
-                    </div>
-
+                {/* Left Column: Date Selection */}
+                <div className="w-full md:w-1/3 bg-secondary-light/5 border-r border-secondary-light/10 p-6 flex flex-col">
                     <div className="mb-6">
-                        <p className="text-sm text-secondary-light mb-1 uppercase tracking-wider font-bold">Task</p>
-                        <h4 className="text-lg font-bold text-secondary-dark">{task?.title}</h4>
+                        <div className="flex items-center gap-2 text-secondary-dark mb-4">
+                            <Sparkles className="w-5 h-5 text-primary" />
+                            <h3 className="text-lg font-bold">Smart Reschedule</h3>
+                        </div>
+                        <p className="text-xs font-bold text-secondary-light uppercase tracking-wider mb-1">Task</p>
+                        <h4 className="text-sm font-bold text-secondary-dark line-clamp-2">{task?.title}</h4>
                     </div>
 
-                    <div className="space-y-3">
-                        <p className="text-sm font-medium text-secondary">Recommended Slots:</p>
-
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+                        <p className="text-xs font-bold text-secondary-light uppercase tracking-wider mb-2">Available Dates</p>
                         {isLoading ? (
-                            <div className="py-12 flex flex-col items-center justify-center space-y-4 bg-secondary-light/5 rounded-2xl border border-dashed border-secondary-light/20">
-                                <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                                <p className="text-sm text-secondary-light font-medium animate-pulse">Analyzing schedule...</p>
+                            <div className="space-y-2">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="h-16 bg-secondary-light/10 rounded-xl animate-pulse" />
+                                ))}
                             </div>
                         ) : suggestions.length > 0 ? (
-                            suggestions.map((s, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => onSelect(s)}
-                                    className="w-full text-left p-4 rounded-2xl border border-secondary-light/20 hover:border-primary hover:bg-primary/5 transition-all group relative overflow-hidden"
-                                >
-                                    <div className="relative z-10 flex items-center justify-between">
-                                        <div>
-                                            <p className="text-sm font-bold text-secondary-dark">{s.display_text}</p>
-                                            <p className="text-xs text-secondary-light">Optimized for your peak hours</p>
+                            suggestions.map((s, i) => {
+                                const dateObj = new Date(s.iso_date);
+                                const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                                const dayNum = dateObj.getDate();
+                                const isSelected = selectedDateIdx === i;
+
+                                return (
+                                    <button
+                                        key={i}
+                                        onClick={() => {
+                                            setSelectedDateIdx(i);
+                                            setSelectedSlot(null);
+                                        }}
+                                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${isSelected
+                                            ? 'bg-white border-primary shadow-md shadow-primary/10'
+                                            : 'bg-transparent border-transparent hover:bg-white hover:border-secondary-light/20'
+                                            }`}
+                                    >
+                                        <div className={`flex flex-col items-center justify-center w-10 h-10 rounded-lg ${isSelected ? 'bg-primary text-white' : 'bg-secondary-light/10 text-secondary'
+                                            }`}>
+                                            <span className="text-[10px] font-bold uppercase leading-none">{dayName}</span>
+                                            <span className="text-sm font-bold leading-none">{dayNum}</span>
                                         </div>
-                                        <ChevronRight className="w-5 h-5 text-secondary-light group-hover:text-primary transition-colors" />
-                                    </div>
-                                    <div className="absolute inset-0 bg-gradient-to-r from-primary/0 to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </button>
-                            ))
+                                        <div>
+                                            <span className={`text-sm font-bold block ${isSelected ? 'text-primary' : 'text-secondary-dark'}`}>
+                                                {dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </span>
+                                            <span className="text-xs text-secondary-light">{s.slots.length} slots found</span>
+                                        </div>
+                                    </button>
+                                );
+                            })
                         ) : (
-                            <div className="p-4 bg-error/5 text-error text-sm rounded-xl border border-error/10">
-                                No suitable slots found. Try manual rescheduling.
+                            <div className="p-4 bg-secondary-light/10 text-secondary text-xs rounded-xl text-center">
+                                No dates found this week.
                             </div>
                         )}
                     </div>
 
                     <button
                         onClick={onClose}
-                        className="w-full mt-8 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                        className="mt-4 w-full py-3 border border-secondary-light/20 text-secondary font-bold rounded-xl hover:bg-white transition-colors text-sm"
                     >
                         Cancel
                     </button>
+                </div>
+
+                {/* Right Column: Slot Selection */}
+                <div className="flex-1 p-6 flex flex-col bg-white">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold text-secondary-dark">
+                            {activeDate
+                                ? `Select time for ${new Date(activeDate.iso_date).toLocaleDateString('en-US', { weekday: 'long' })}`
+                                : 'Select a date'}
+                        </h3>
+                        <button onClick={onClose} className="md:hidden p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                            <X className="w-5 h-5 text-secondary" />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto pr-2">
+                        {activeDate ? (
+                            <div className="grid grid-cols-2 gap-3">
+                                {activeDate.slots.map((slot: any, idx: number) => {
+                                    const start = new Date(slot.start);
+                                    const end = new Date(slot.end);
+                                    const isSelected = selectedSlot === slot;
+
+                                    return (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setSelectedSlot(slot)}
+                                            className={`p-4 rounded-xl border-2 transition-all text-left ${isSelected
+                                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                                : 'border-secondary-light/10 hover:border-primary/30 hover:bg-secondary-light/5'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Clock className={`w-4 h-4 ${isSelected ? 'text-primary' : 'text-secondary-light'}`} />
+                                                <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-secondary-dark'}`}>
+                                                    {start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                            <span className="text-xs text-secondary-light block pl-6">
+                                                To {end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-secondary-light/50">
+                                <Clock className="w-12 h-12 mb-2 opacity-50" />
+                                <p className="text-sm">Select a date to view available slots</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-secondary-light/10 flex justify-end">
+                        <button
+                            onClick={() => {
+                                if (selectedSlot) {
+                                    onSelect({ iso_start_time: selectedSlot.start });
+                                }
+                            }}
+                            disabled={!selectedSlot}
+                            className="px-8 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Confirm Reschedule
+                        </button>
+                    </div>
                 </div>
             </motion.div>
         </div>

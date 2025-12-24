@@ -291,7 +291,9 @@ def complete_ai_task(
 
 
 class TaskUpdate(BaseModel):
-    status: str
+    status: Optional[str] = None
+    task_date: Optional[PyDate] = None
+    task_time: Optional[datetime] = None
 
 @router.put("/tasks/{task_id}")
 def update_task_status(
@@ -308,7 +310,13 @@ def update_task_status(
     ).first()
 
     if task:
-        task.task_status = update_data.status
+        if update_data.status:
+            task.task_status = update_data.status
+        if update_data.task_date:
+            task.task_date = update_data.task_date
+        if update_data.task_time:
+            task.task_time = update_data.task_time
+            
         db.commit()
         db.refresh(task)
         return {"message": "Task updated", "task_id": task_id, "status": task.task_status}
@@ -320,7 +328,13 @@ def update_task_status(
     ).first()
 
     if manual_task:
-        manual_task.status = update_data.status
+        if update_data.status:
+            manual_task.status = update_data.status
+        if update_data.task_date:
+            manual_task.task_date = update_data.task_date
+        if update_data.task_time:
+            manual_task.task_time = update_data.task_time
+            
         db.commit()
         db.refresh(manual_task)
         return {"message": "Task updated", "task_id": task_id, "status": manual_task.status}
