@@ -22,6 +22,7 @@ export interface StudyTask {
     duration_minutes: number;
     status: string;
     color: string;
+    is_manual?: boolean; // Added for Manual Task differentiation
 }
 
 export interface ExamResponse {
@@ -164,7 +165,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
                 task_date: t.task_date,
                 duration_minutes: t.duration_minutes || 60,
                 status: t.task_status,
-                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary'
+                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary',
+                is_manual: t.is_manual || false
             }));
             setAllTasks(newTasks);
             calculateCalendarRange(newTasks);

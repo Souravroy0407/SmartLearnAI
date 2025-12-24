@@ -279,7 +279,12 @@ const StudyPlanner = () => {
         try {
             // Optimistic update via Context
             contextUpdateTask(updatedTask);
-            await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
+
+            if (task.is_manual) {
+                await api.put(`/api/tasks/manual/${taskId}`, { status: newStatus });
+            } else {
+                await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
+            }
         } catch (error) {
             console.error("Error updating task:", error);
             contextUpdateTask(task); // Revert on error

@@ -30,6 +30,27 @@ class StudyGoalResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class CreateManualTaskRequest(BaseModel):
+    title: str
+    task_date: PyDate
+    colourtag: Optional[str] = None
+    task_time: Optional[datetime] = None
+    # duration is not stored in DB as per manual task table
+    # status default is handled by DB/Logic
+
+class ManualTaskResponse(BaseModel):
+    task_id: int
+    student_id: int
+    title: str
+    task_date: PyDate
+    colourtag: Optional[str]
+    task_time: Optional[datetime]
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 
 @router.post("/goals", response_model=StudyGoalResponse)
@@ -97,6 +118,7 @@ class StudyTaskResponse(BaseModel):
     duration_minutes: Optional[int]
     sequence_no: Optional[int]
     task_status: str
+    is_manual: bool = False # Added to distinguish for UI actions
 
     class Config:
         from_attributes = True
@@ -133,7 +155,8 @@ def list_tasks(
             task_time=t.task_time,
             duration_minutes=t.duration_minutes,
             sequence_no=t.sequence_no or 0,
-            task_status=t.task_status
+            task_status=t.task_status,
+            is_manual=False
         ))
         
     # Manual tasks might not have goal_id, sequence_no etc. 
@@ -150,7 +173,8 @@ def list_tasks(
             task_time=t.task_time, # Manual tasks have task_time too
             duration_minutes=60, # Default if missing
             sequence_no=0,
-            task_status=t.status
+            task_status=t.status,
+            is_manual=True
         ))
     
     # Sort: Date ASC, Sequence ASC
