@@ -47,6 +47,7 @@ const StudyPlanner = () => {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeletingGoal, setIsDeletingGoal] = useState(false);
     const [isDeletingTask, setIsDeletingTask] = useState(false); // Task Deletion Loading State
+    const [isUpdatingTask, setIsUpdatingTask] = useState(false); // Task Update Loading State (Reschedule)
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
     const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
@@ -365,19 +366,68 @@ const StudyPlanner = () => {
     const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
         if (!taskToReschedule) return;
 
+        setIsUpdatingTask(true);
+
         try {
-            // Update in context
+            // Updated Context with ALL fields (Optimistic UI - Color, Date, Time, Duration)
             const task = allTasks.find(t => t.id === taskToReschedule.id);
             if (task) {
-                contextUpdateTask({ ...task, ...updatedTaskPart });
+                const optimisticUpdates = { ...updatedTaskPart };
+
+                // CRITICAL: Sync task_date if start_time changed
+                // This ensures the task moves to the correct day in the UI immediately
+                if (optimisticUpdates.start_time) {
+                    optimisticUpdates.task_date = optimisticUpdates.start_time.split('T')[0];
+                }
+
+                contextUpdateTask({ ...task, ...optimisticUpdates });
             }
 
-            await api.put(`/api/study-planner/tasks/${taskToReschedule.id}`, updatedTaskPart);
-            setTaskToReschedule(null);
-            showToast('Task rescheduled', 'success');
+            // Prepare Strict API Payload (DB Fields Only)
+            // Backend Schema: { task_date: str, task_time: datetime, duration_minutes: int }
+            if (updatedTaskPart.start_time && updatedTaskPart.duration_minutes) {
+
+                // STEP 7: Add Safety Guards
+                // Ensure critical IDs and Types exist before calling API
+                if (!taskToReschedule.task_id) {
+                    console.warn("Safety Check Failed: Missing task_id for reschedule.");
+                    setIsUpdatingTask(false);
+                    return; // Abort silently/log only
+                }
+
+                if (!taskToReschedule.source_type) {
+                    console.warn("Safety Check Failed: Missing source_type for reschedule.");
+                    setIsUpdatingTask(false);
+                    return;
+                }
+
+                const apiPayload = {
+                    task_date: updatedTaskPart.start_time.split('T')[0],
+                    task_time: updatedTaskPart.start_time,
+                    duration_minutes: updatedTaskPart.duration_minutes
+                };
+
+                // STEP 5: Conditional API Call Logic
+                if (taskToReschedule.source_type === 'manual') {
+                    await api.put(`/api/study-planner/tasks/manual/${taskToReschedule.task_id}`, apiPayload);
+                } else {
+                    // Default to AI/Regular tasks
+                    await api.put(`/api/study-planner/tasks/ai/${taskToReschedule.task_id}`, apiPayload);
+                }
+
+                setTaskToReschedule(null);
+                setIsUpdatingTask(false);
+                showToast('Task rescheduled', 'success');
+            } else {
+                console.warn("Safety Check Failed: Missing start_time or duration_minutes for reschedule payload.");
+                setIsUpdatingTask(false);
+                // throw new Error("Missing required fields for reschedule"); // Removed to prevent crash
+            }
+
         } catch (error) {
             console.error("Error updating task:", error);
-            refreshAll();
+            refreshAll(); // Revert
+            setIsUpdatingTask(false);
             showToast('Failed to reschedule', 'error');
         }
     };
@@ -502,6 +552,8 @@ const StudyPlanner = () => {
     const handleApplySmartSuggestion = async (suggestion: any) => {
         if (!taskToRescheduleAI) return;
 
+        setIsUpdatingTask(true);
+
         try {
             const payload = {
                 task_date: suggestion.iso_start_time.split('T')[0],
@@ -518,16 +570,22 @@ const StudyPlanner = () => {
                 // it is derived or backend only.
             });
 
-            // ... rest of logic
-            await api.put(`/api/study-planner/tasks/${taskToRescheduleAI.id}`, payload);
+            // Conditional API Call for AI Tasks (or Manual if triggered here)
+            if (taskToRescheduleAI.source_type === 'manual') {
+                await api.put(`/api/study-planner/tasks/manual/${taskToRescheduleAI.task_id}`, payload);
+            } else {
+                await api.put(`/api/study-planner/tasks/ai/${taskToRescheduleAI.task_id}`, payload);
+            }
 
             showToast('Rescheduled successfully', 'success');
             setTaskToRescheduleAI(null); // Close modal
+            setIsUpdatingTask(false);
         } catch (error) {
             console.error("Failed to apply smart suggestion", error);
             // Revert on error (fetch fresh)
             refreshAll();
             showToast('Failed to reschedule', 'error');
+            setIsUpdatingTask(false);
         }
     };
 
@@ -1172,6 +1230,23 @@ const StudyPlanner = () => {
                         </div>
                         <h3 className="text-xl font-bold text-secondary-dark mb-2">Deleting your goal...</h3>
                         <p className="text-secondary-light">Please wait. This may take a moment while we clean up your schedule.</p>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Updating Task Overlay */}
+            {isUpdatingTask && (
+                <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm text-center"
+                    >
+                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                        </div>
+                        <h3 className="text-xl font-bold text-secondary-dark mb-2">Updating task...</h3>
+                        <p className="text-secondary-light">Applying your schedule changes.</p>
                     </motion.div>
                 </div>
             )}

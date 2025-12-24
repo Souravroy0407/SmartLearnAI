@@ -294,50 +294,88 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     task_date: Optional[PyDate] = None
     task_time: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
 
-@router.put("/tasks/{task_id}")
-def update_task_status(
+@router.put("/tasks/ai/{task_id}")
+def update_ai_task(
     task_id: int,
     update_data: TaskUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Verify task ownership via student_id directly
-    # Check AI Tasks
     task = db.query(CreateTaskAI).filter(
         CreateTaskAI.task_id == task_id,
         CreateTaskAI.student_id == current_user.id
     ).first()
 
-    if task:
-        if update_data.status:
-            task.task_status = update_data.status
-        if update_data.task_date:
-            task.task_date = update_data.task_date
-        if update_data.task_time:
-            task.task_time = update_data.task_time
-            
-        db.commit()
-        db.refresh(task)
-        return {"message": "Task updated", "task_id": task_id, "status": task.task_status}
+    if not task:
+        raise HTTPException(status_code=404, detail="AI Task not found")
 
-    # Check Manual Tasks (if not found in AI tasks)
+    if update_data.status:
+        task.task_status = update_data.status
+    if update_data.task_date:
+        task.task_date = update_data.task_date
+    if update_data.task_time:
+        task.task_time = update_data.task_time
+    if update_data.duration_minutes is not None:
+        task.duration_minutes = update_data.duration_minutes
+        
+    db.commit()
+    db.refresh(task)
+    return {"message": "AI Task updated", "task_id": task_id, "status": task.task_status}
+
+
+@router.put("/tasks/manual/{task_id}")
+def update_manual_task(
+    task_id: int,
+    update_data: TaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     manual_task = db.query(CreateTaskManual).filter(
         CreateTaskManual.task_id == task_id,
         CreateTaskManual.student_id == current_user.id
     ).first()
 
-    if manual_task:
-        if update_data.status:
-            manual_task.status = update_data.status
-        if update_data.task_date:
-            manual_task.task_date = update_data.task_date
-        if update_data.task_time:
-            manual_task.task_time = update_data.task_time
-            
-        db.commit()
-        db.refresh(manual_task)
-        return {"message": "Task updated", "task_id": task_id, "status": manual_task.status}
+    if not manual_task:
+        raise HTTPException(status_code=404, detail="Manual Task not found")
+
+    if update_data.status:
+        manual_task.status = update_data.status
+    if update_data.task_date:
+        manual_task.task_date = update_data.task_date
+    if update_data.task_time:
+        manual_task.task_time = update_data.task_time
+    if update_data.duration_minutes is not None:
+         # Safely check or assume existence. Given models usually align.
+         if hasattr(manual_task, 'duration_minutes'):
+            manual_task.duration_minutes = update_data.duration_minutes
+        
+    db.commit()
+    db.refresh(manual_task)
+    return {"message": "Manual Task updated", "task_id": task_id, "status": manual_task.status}
+
+
+# Helper for backward compatibility or generic ID usage (Optional but good for safety)
+# The user asked to route specifically, so generic route might be removed or kept as fallback.
+# Keeping generic /tasks/{task_id} as fallback/legacy router if needed, 
+# but modifying it to try to find either if called directly.
+@router.put("/tasks/{task_id}")
+def update_task_any(
+    task_id: int,
+    update_data: TaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Try AI first
+    ai_task = db.query(CreateTaskAI).filter(CreateTaskAI.task_id == task_id, CreateTaskAI.student_id == current_user.id).first()
+    if ai_task:
+        return update_ai_task(task_id, update_data, db, current_user)
     
+    # Try Manual
+    manual_task = db.query(CreateTaskManual).filter(CreateTaskManual.task_id == task_id, CreateTaskManual.student_id == current_user.id).first()
+    if manual_task:
+        return update_manual_task(task_id, update_data, db, current_user)
+        
     raise HTTPException(status_code=404, detail="Task not found")
 

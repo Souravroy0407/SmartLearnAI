@@ -170,7 +170,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
                 status: t.task_status,
                 color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary',
                 is_manual: t.is_manual || false,
-                source_type: t.task_type || (t.is_manual ? 'manual' : 'ai') // Map backend task_type or fallback
+                source_type: (t.is_manual || t.task_type === 'manual') ? 'manual' : 'ai' // Canonical source type tracking
             }));
             setAllTasks(newTasks);
             calculateCalendarRange(newTasks);
