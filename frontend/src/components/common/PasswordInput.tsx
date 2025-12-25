@@ -10,6 +10,7 @@ interface PasswordInputProps {
     label?: string;
     name?: string;
     disabled?: boolean;
+    className?: string;
 }
 
 const PasswordInput = ({
@@ -19,7 +20,8 @@ const PasswordInput = ({
     showStrengthMeter = false,
     label = "Password",
     name = "password",
-    disabled = false
+    disabled = false,
+    className = ""
 }: PasswordInputProps) => {
     const [isVisible, setIsVisible] = useState(false);
     const [strength, setStrength] = useState(0);
@@ -65,14 +67,14 @@ const PasswordInput = ({
                 {label}
             </label>
             <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light pointer-events-none" />
                 <input
                     type={isVisible ? "text" : "password"}
                     value={value}
                     onChange={onChange}
                     name={name}
                     disabled={disabled}
-                    className="w-full pl-12 pr-12 py-3 bg-background border border-secondary-light/20 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none text-secondary-dark"
+                    className={`w-full pl-12 pr-12 py-3 bg-background border border-secondary-light/20 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all outline-none text-secondary-dark ${className}`}
                     placeholder={placeholder}
                     required
                 />
