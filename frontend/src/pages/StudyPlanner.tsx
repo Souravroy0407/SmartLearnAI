@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw, ChevronDown, ChevronUp, Save, Filter } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw, ChevronDown, ChevronUp, Save, Filter, Search } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import CreateGoalModal from '../components/CreateGoalModal';
@@ -78,6 +78,9 @@ const StudyPlanner = () => {
     const [showManualOnly, setShowManualOnly] = useState(false);
     const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false); // UI State for popover
 
+    // Search State
+    const [searchQuery, setSearchQuery] = useState('');
+
     // Change Exam Date Modal State
     const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
     const [dateChangeOption, setDateChangeOption] = useState<'update_all' | 'keep_existing' | 'add_new'>('update_all');
@@ -139,23 +142,101 @@ const StudyPlanner = () => {
         };
     }, [selectedDate, exams]);
 
-    // Derived State: Dates with Manual Tasks (for Calendar Highlight)
-    // This overrides the default calendarDays.hasTask when filter is ON
-    const manualTaskDates = useMemo(() => {
-        if (!showManualOnly) return null;
-        const dates = new Set<string>();
-        allTasks.forEach(t => {
-            // Re-use logic: manual task identification
-            const isManual = t.is_manual === true || t.source_type === 'manual' || t.goal_id === 0;
-            if (isManual) {
-                const d = t.task_date || t.start_time?.split('T')[0];
-                if (d) dates.add(d);
+    // 1. Goal Title Map for efficient search
+    const goalTitleMap = useMemo(() => {
+        const map = new Map<number, string>();
+        exams.forEach(item => {
+            if (item.exam && item.exam.id) {
+                map.set(item.exam.id, item.exam.title.toLowerCase());
             }
         });
-        return dates;
-    }, [allTasks, showManualOnly]);
+        return map;
+    }, [exams]);
 
-    // Derived State: Filter Tasks for Selected Date
+    // 2. Unified Filtered List (Search + Manual Toggle + Goal Filter)
+    const filteredGlobalTasks = useMemo(() => {
+        // Normalize search
+        const trimmedQuery = searchQuery.trim().toLowerCase();
+        const isSearchActive = trimmedQuery.length > 0;
+
+        // Shortcuts
+        const searchManual = trimmedQuery === 'manual';
+        const searchCompleted = trimmedQuery === 'completed';
+        const searchExam = trimmedQuery === 'exam';
+
+        return allTasks.filter(task => {
+            // A. Manual Filter (Toggle OR Shortcut)
+            const isManualTask = task.is_manual === true || task.source_type === 'manual' || task.goal_id === 0;
+            if (showManualOnly || searchManual) {
+                if (!isManualTask) return false;
+            }
+
+            // B. Goal Filter (Checkbox)
+            // Existing logic: intersects with manual/search
+            if (filterGoalIds.size > 0) {
+                const taskGoalId = task.goal_id ? Number(task.goal_id) : null;
+                // If task has NO goal (and is manual), and filter is active, usually we hide it unless we want to show manual + goal?
+                // Current logic: strict goal filter.
+                if (taskGoalId !== null && !filterGoalIds.has(taskGoalId)) {
+                    // Exception: Maybe manual tasks without goal should show? 
+                    // Sticking to previous behavior: if filtered by goal, must match goal.
+                    return false;
+                }
+                if (taskGoalId === null && filterGoalIds.size > 0) return false;
+            }
+
+            // C. Search Filter (if active and not a shortcut handled above)
+            if (isSearchActive && !searchManual) {
+                if (searchCompleted) {
+                    return task.status === 'completed';
+                }
+                if (searchExam) {
+                    // Show tasks related to exams (or just type exam?)
+                    // Let's assume tasks with goal_id or type 'exam'
+                    return task.task_type === 'exam' || !!task.goal_id;
+                }
+
+                // General Text Search
+                const titleMatch = task.title.toLowerCase().includes(trimmedQuery);
+                let goalMatch = false;
+                if (task.goal_id) {
+                    const goalTitle = goalTitleMap.get(Number(task.goal_id));
+                    if (goalTitle && goalTitle.includes(trimmedQuery)) {
+                        goalMatch = true;
+                    }
+                }
+
+                return titleMatch || goalMatch;
+            }
+
+            return true;
+        });
+    }, [allTasks, searchQuery, showManualOnly, filterGoalIds, goalTitleMap]);
+
+    // 3. Highlighted Dates (Derived from Unified List)
+    const highlightedDates = useMemo(() => {
+        const dates = new Set<string>();
+        filteredGlobalTasks.forEach(t => {
+            const d = t.task_date || t.start_time?.split('T')[0];
+            if (d) dates.add(d);
+        });
+        return dates;
+    }, [filteredGlobalTasks]);
+
+    // Jump to Today Shortcut
+    useEffect(() => {
+        if (searchQuery.trim().toLowerCase() === 'today') {
+            setSelectedDate(new Date());
+            // Optional: clear search? User requirements didn't specify, but often good UX.
+            // Requirement says "restore full planner" on clear. 
+            // If I type today, it filters to nothing (probably) then jumps. 
+            // Better to clear it so they see today's tasks.
+            setSearchQuery('');
+        }
+    }, [searchQuery]);
+
+
+
     // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
         const year = selectedDate.getFullYear();
@@ -163,29 +244,15 @@ const StudyPlanner = () => {
         const day = String(selectedDate.getDate()).padStart(2, '0');
         const formattedSelected = `${year}-${month}-${day}`;
 
-        return allTasks.filter(task => {
-            // 1️⃣ Date must match FIRST
+        return filteredGlobalTasks.filter(task => { // Source from filtered list
+            // 1️⃣ Date must match
             const taskDate = task.task_date
                 ? task.task_date
                 : task.start_time?.split('T')[0];
 
-            if (taskDate !== formattedSelected) return false;
-
-            // 2️⃣ Filter by Manual Only (if enabled)
-            if (showManualOnly) {
-                // Check multiple flags for robustness
-                const isManual = task.is_manual === true || task.source_type === 'manual' || task.goal_id === 0;
-                if (!isManual) return false;
-            }
-
-            // 3️⃣ If no goals selected → allow (unless filtered out by manual check above)
-            if (filterGoalIds.size === 0) return true;
-
-            // 4️⃣ Goal filter (safe numeric comparison)
-            const taskGoalId = task.goal_id ? Number(task.goal_id) : null;
-            return taskGoalId !== null && filterGoalIds.has(taskGoalId);
+            return taskDate === formattedSelected;
         });
-    }, [allTasks, selectedDate, filterGoalIds, showManualOnly]);
+    }, [filteredGlobalTasks, selectedDate]);
 
     // Derived State: Daily Goal Stats
     const { completedCount, totalCount, progress } = useMemo(() => {
@@ -880,6 +947,28 @@ const StudyPlanner = () => {
         };
     }, []);
 
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setSearchQuery('');
+                setIsFilterPopoverOpen(false);
+                setActiveMenuTaskId(null);
+            }
+            if (e.key === '/' && !isModalOpen && !isEditTaskNameModalOpen) {
+                // Prevent default if it's a search focus
+                // Don't focus if typing in another input? 
+                if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    document.getElementById('task-search-input')?.focus();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isModalOpen, isEditTaskNameModalOpen]);
+
     const formatTime = (isoString: string) => {
         return new Date(isoString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
@@ -923,7 +1012,28 @@ const StudyPlanner = () => {
                             <h2 className="text-lg font-bold text-secondary-dark">
                                 {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                             </h2>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                                {/* Search Input */}
+                                <div className="relative w-64 mr-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-light" />
+                                    <input
+                                        id="task-search-input"
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder='Search tasks...'
+                                        className="w-full pl-9 pr-8 py-2 bg-secondary-light/5 border border-secondary-light/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 text-secondary-dark placeholder:text-secondary-light/50 transition-all text-sm font-medium"
+                                    />
+                                    {searchQuery && (
+                                        <button
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-secondary-light/20 rounded-full transition-colors"
+                                        >
+                                            <X className="w-3 h-3 text-secondary" />
+                                        </button>
+                                    )}
+                                </div>
+
                                 <button
                                     onClick={() => {
                                         const selectedIndex = calendarDays.findIndex(d =>
@@ -972,15 +1082,16 @@ const StudyPlanner = () => {
                             {calendarDays.map((item, index) => {
                                 const isSelected = selectedDate.getDate() === item.date && selectedDate.getMonth() === item.fullDate.getMonth();
 
-                                // FIX: Use filtered dates if filter is ON
-                                let hasTask = item.hasTask;
-                                if (showManualOnly && manualTaskDates) {
-                                    const year = item.fullDate.getFullYear();
-                                    const month = String(item.fullDate.getMonth() + 1).padStart(2, '0');
-                                    const day = String(item.fullDate.getDate()).padStart(2, '0');
-                                    const dateStr = `${year}-${month}-${day}`;
-                                    hasTask = manualTaskDates.has(dateStr);
-                                }
+                                // Unified Highlight Logic (Search/Manual/Goal)
+                                const year = item.fullDate.getFullYear();
+                                const month = String(item.fullDate.getMonth() + 1).padStart(2, '0');
+                                const day = String(item.fullDate.getDate()).padStart(2, '0');
+                                const dateStr = `${year}-${month}-${day}`;
+
+                                const isFilterActive = showManualOnly || searchQuery.trim().length > 0 || filterGoalIds.size > 0;
+                                const hasTask = isFilterActive
+                                    ? highlightedDates.has(dateStr)
+                                    : item.hasTask;
 
                                 return (
                                     <button
@@ -1117,7 +1228,17 @@ const StudyPlanner = () => {
                                                     )}
                                                 </div>
                                                 <h4 className={`font-bold text-secondary-dark ${task.status === 'completed' ? 'line-through opacity-50' : ''}`}>
-                                                    {task.title}
+                                                    {/* Highlight Search Matches */}
+                                                    {(() => {
+                                                        if (!searchQuery || searchQuery.length < 2) return task.title;
+                                                        // Safe Regex escaping
+                                                        const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                        const regex = new RegExp(`(${escapedQuery})`, 'gi');
+                                                        const parts = task.title.split(regex);
+                                                        return parts.map((part, i) =>
+                                                            regex.test(part) ? <span key={i} className="bg-yellow-200 text-yellow-900 rounded-[2px] px-0.5">{part}</span> : part
+                                                        );
+                                                    })()}
                                                 </h4>
                                             </div>
 
