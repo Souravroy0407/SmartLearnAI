@@ -59,12 +59,11 @@ const StudyPlanner = () => {
     const [goalToEdit, setGoalToEdit] = useState<{ id: number; title: string } | null>(null);
     const [activeGoalMenuId, setActiveGoalMenuId] = useState<number | null>(null);
     const [goalMenuPlacement, setGoalMenuPlacement] = useState<'top' | 'bottom'>('bottom');
-    const [isEditGoalModalOpen, setIsEditGoalModalOpen] = useState(false);
+    const [isEditGoalModalOpen, setIsEditGoalModalOpen] = useState(false); // Restored
+    // Goal UI State
+    const [isUpdatingGoalStatus, setIsUpdatingGoalStatus] = useState(false);
     const [isSavingGoal, setIsSavingGoal] = useState(false);
 
-    // Goal Completion State
-    const [goalToComplete, setGoalToComplete] = useState<any>(null);
-    const [isCompletingGoal, setIsCompletingGoal] = useState(false);
 
     // Goal Filter State (New)
     // Goal Filter State (Multi-Select)
@@ -411,23 +410,30 @@ const StudyPlanner = () => {
         }
     };
 
-    const handleCompleteGoal = async () => {
-        if (!goalToComplete) return;
+    const toggleGoalCompletion = async (goalItem: any) => {
+        if (isUpdatingGoalStatus) return;
 
-        setIsCompletingGoal(true);
+        const goalId = goalItem.exam.id;
+        const currentStatus = goalItem.goal_status;
+        const newStatus = currentStatus === 'completed' ? 'active' : 'completed';
+
+        setIsUpdatingGoalStatus(true);
+
         try {
-            await api.put(`/api/goals/${goalToComplete.exam.id}/complete`);
+            await api.put(`/api/goals/${goalId}/complete`, null, { params: { status: newStatus } });
 
+            // Success: Sync fully BEFORE unlocking UI
+            // This ensures the "COMPLETED" badge appears only after data is confirmed
             await refreshGoals();
             await refreshAll();
 
-            setGoalToComplete(null);
-            showToast('Goal and tasks marked as completed!', 'success');
+            showToast(newStatus === 'completed' ? 'Planner marked as completed' : 'Planner restored to active', 'success');
         } catch (error) {
-            console.error("Failed to complete goal:", error);
-            showToast('Failed to mark goal as completed', 'error');
+            console.error("Failed to toggle goal status:", error);
+            // On error, we just close the modal. UI remains in previous state (Rollback behavior implicit)
+            showToast('Failed to update goal status', 'error');
         } finally {
-            setIsCompletingGoal(false);
+            setIsUpdatingGoalStatus(false);
         }
     };
 
@@ -1207,34 +1213,41 @@ const StudyPlanner = () => {
                                                         {item.status}
                                                     </span>
 
-                                                    {/* Countdown (Inline) */}
-                                                    {item.status.toLowerCase() === 'exam' && item.goal_status !== 'completed' && examDate.getFullYear() !== 1970 && (
-                                                        <span className={`text-xs font-bold whitespace-nowrap ${diffDays <= 3 ? 'text-error' :
-                                                            diffDays <= 7 ? 'text-warning' :
-                                                                'text-secondary-light'
-                                                            }`}>
-                                                            {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
+                                                    {/* Countdown (Inline) or COMPLETED Badge */}
+                                                    {item.goal_status === 'completed' ? (
+                                                        <span className="px-2 py-0.5 rounded-md bg-success text-white text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm">
+                                                            COMPLETED
                                                         </span>
+                                                    ) : (
+                                                        item.status.toLowerCase() === 'exam' && examDate.getFullYear() !== 1970 && (
+                                                            <span className={`text-xs font-bold whitespace-nowrap ${diffDays <= 3 ? 'text-error' :
+                                                                diffDays <= 7 ? 'text-warning' :
+                                                                    'text-secondary-light'
+                                                                }`}>
+                                                                {diffDays < 0 ? 'Done' : diffDays === 0 ? 'Today' : `${diffDays} days left`}
+                                                            </span>
+                                                        )
                                                     )}
                                                 </div>
                                             </div>
 
                                             {/* Hover Mark Complete Button */}
-                                            {item.goal_status !== 'completed' && (
-                                                <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setGoalToComplete(item);
-                                                        }}
-                                                        className="flex items-center gap-1 px-2 py-1.5 bg-success/10 text-success hover:bg-success/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors shadow-sm"
-                                                        title="Mark Goal & Tasks Complete"
-                                                    >
-                                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                                        Complete
-                                                    </button>
-                                                </div>
-                                            )}
+                                            {/* Hover Mark Complete Button (Toggle) */}
+                                            <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleGoalCompletion(item);
+                                                    }}
+                                                    disabled={isUpdatingGoalStatus}
+                                                    className={`p-2 rounded-lg transition-colors ${item.goal_status === 'completed'
+                                                        ? 'text-success bg-success/10'
+                                                        : 'text-secondary-light hover:text-primary hover:bg-primary/10'}`}
+                                                    title={item.goal_status === 'completed' ? "Mark as active" : "Mark as completed"}
+                                                >
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
 
                                             {/* Goal Menu */}
                                             <div className="absolute top-2 right-2 z-20">
@@ -1549,42 +1562,24 @@ const StudyPlanner = () => {
                 </div>
             )}
 
-            {/* Complete Goal Confirmation Modal */}
-            {goalToComplete && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+
+            {/* Blocking Update Modal */}
+            {isUpdatingGoalStatus && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto">
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                        className="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm"
                     >
-                        <div className="flex flex-col items-center text-center gap-4">
-                            <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center text-success mb-2">
-                                <CheckCircle2 className="w-8 h-8" />
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping" />
+                            <div className="relative bg-primary/10 p-4 rounded-full">
+                                <RotateCw className="w-8 h-8 text-primary animate-spin" />
                             </div>
-
-                            <div>
-                                <h3 className="text-lg font-bold text-secondary-dark mb-2">Identify as Complete?</h3>
-                                <p className="text-sm text-secondary">
-                                    Mark <span className="font-bold">"{goalToComplete.exam.title}"</span> and all its pending tasks as completed?
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3 w-full mt-2">
-                                <button
-                                    onClick={() => setGoalToComplete(null)}
-                                    disabled={isCompletingGoal}
-                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-secondary bg-secondary-light/10 hover:bg-secondary-light/20 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleCompleteGoal}
-                                    disabled={isCompletingGoal}
-                                    className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-white bg-success hover:bg-success/90 shadow-lg shadow-success/20 transition-colors"
-                                >
-                                    {isCompletingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
-                                </button>
-                            </div>
+                        </div>
+                        <div className="text-center">
+                            <h3 className="text-lg font-bold text-secondary-dark mb-1">Updating Planner</h3>
+                            <p className="text-secondary text-sm">Please wait while we update your planner...</p>
                         </div>
                     </motion.div>
                 </div>

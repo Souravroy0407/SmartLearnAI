@@ -33,6 +33,7 @@ def delete_goal(
 @router.put("/{goal_id}/complete")
 def complete_goal(
     goal_id: int,
+    status: str = "completed", # Added status param (default to completed)
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -47,7 +48,7 @@ def complete_goal(
 
     try:
         # 2. Update Goal Status
-        goal.status = "completed"
+        goal.current_status = status # Correct field name from models.py
         # goal.completed_at = datetime.utcnow() # If field exists (schema dependent)
 
         # 3. Update AI Tasks
@@ -58,20 +59,9 @@ def complete_goal(
         db.query(CreateTaskAI).filter(
             CreateTaskAI.goal_id == goal_id,
             CreateTaskAI.student_id == current_user.id
-        ).update({CreateTaskAI.task_status: "completed"}, synchronize_session=False)
+        ).update({CreateTaskAI.task_status: status}, synchronize_session=False)
 
-        # 4. Update Manual Tasks (Linked via goal_id if applicable, or generic logic?)
-        # For now, Manual Tasks don't natively link to goal_id in schema shown in models.py (no goal_id FK shown in snippet)
-        # However, if we assume manual tasks are just standalone, we might skip them or query by date range of exam?
-        # Re-reading schema: CreateTaskManual snippet didn't show goal_id.
-        # But Requirement says "Update ALL related tasks... AI-generated tasks... Manually-created tasks".
-        # If Manual tasks lack goal_id, we can't safely link them.
-        # Wait, CreateTaskAI has goal_id. CreateTaskManual snippet L175+ didn't show goal_id.
-        # Let's check model.py again.
-        # Checking... CreateTaskAI (L158) has goal_id. CreateTaskManual (L177+) does NOT show goal_id in snippet.
-        # If manual tasks don't have goal_id, we CANNOT safely bulk complete them for a specific goal.
-        # I will strictly follow safety rules: Only update AI tasks linked to this goal.
-        # User requirement says "Match tasks by goal_id". If manual doesn't have it, it's out of scope for this safe transaction.
+        # 4. Manual Tasks - (Skip as discussed in previous analysis - no safe link)
         
         # 5. Commit
         db.commit()

@@ -67,6 +67,7 @@ interface StudyPlannerContextType {
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
     updateGoal: (goalId: number, newTitle: string) => void; // Added for Edit Planner Name
+    updateGoalStatus: (goalId: number, status: string) => void;
     setUserEnergyPref: (pref: string) => void;
 }
 
@@ -247,6 +248,13 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         } : e));
     };
 
+    const updateGoalStatus = (goalId: number, status: string) => {
+        setExams(prev => prev.map(e => e.exam.id === goalId ? {
+            ...e,
+            goal_status: status
+        } : e));
+    };
+
     // Reset on logout (if user becomes null)
     useEffect(() => {
         if (!user) {
@@ -278,6 +286,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             deleteTask,
             addTask,
             updateGoal, // Export updateGoal
+            updateGoalStatus,
             setUserEnergyPref
         }}>
             {children}
