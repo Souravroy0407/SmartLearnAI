@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle2, ChevronRight, MoreVertical, Plus, Sparkles, Clock, Loader2, Trash2, X, Edit3, Calendar as CalendarIcon, RotateCw, ChevronDown, ChevronUp, Save, Filter } from 'lucide-react';
 import api from '../api/axios';
 import CreateTaskModal from '../components/CreateTaskModal';
 import CreateGoalModal from '../components/CreateGoalModal';
@@ -64,10 +64,19 @@ const StudyPlanner = () => {
     const [isUpdatingGoalStatus, setIsUpdatingGoalStatus] = useState(false);
     const [isSavingGoal, setIsSavingGoal] = useState(false);
 
+    // Task Name Editing State
+    const [isEditTaskNameModalOpen, setIsEditTaskNameModalOpen] = useState(false);
+    const [taskToEditName, setTaskToEditName] = useState<StudyTask | null>(null);
+    const [isUpdatingTaskName, setIsUpdatingTaskName] = useState(false);
+
 
     // Goal Filter State (New)
     // Goal Filter State (Multi-Select)
     const [filterGoalIds, setFilterGoalIds] = useState<Set<number>>(new Set());
+
+    // Manual Task Filter State
+    const [showManualOnly, setShowManualOnly] = useState(false);
+    const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false); // UI State for popover
 
     // Change Exam Date Modal State
     const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
@@ -130,6 +139,22 @@ const StudyPlanner = () => {
         };
     }, [selectedDate, exams]);
 
+    // Derived State: Dates with Manual Tasks (for Calendar Highlight)
+    // This overrides the default calendarDays.hasTask when filter is ON
+    const manualTaskDates = useMemo(() => {
+        if (!showManualOnly) return null;
+        const dates = new Set<string>();
+        allTasks.forEach(t => {
+            // Re-use logic: manual task identification
+            const isManual = t.is_manual === true || t.source_type === 'manual' || t.goal_id === 0;
+            if (isManual) {
+                const d = t.task_date || t.start_time?.split('T')[0];
+                if (d) dates.add(d);
+            }
+        });
+        return dates;
+    }, [allTasks, showManualOnly]);
+
     // Derived State: Filter Tasks for Selected Date
     // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
@@ -146,14 +171,21 @@ const StudyPlanner = () => {
 
             if (taskDate !== formattedSelected) return false;
 
-            // 2️⃣ If no goals selected → allow
+            // 2️⃣ Filter by Manual Only (if enabled)
+            if (showManualOnly) {
+                // Check multiple flags for robustness
+                const isManual = task.is_manual === true || task.source_type === 'manual' || task.goal_id === 0;
+                if (!isManual) return false;
+            }
+
+            // 3️⃣ If no goals selected → allow (unless filtered out by manual check above)
             if (filterGoalIds.size === 0) return true;
 
-            // 3️⃣ Goal filter (safe numeric comparison)
+            // 4️⃣ Goal filter (safe numeric comparison)
             const taskGoalId = task.goal_id ? Number(task.goal_id) : null;
             return taskGoalId !== null && filterGoalIds.has(taskGoalId);
         });
-    }, [allTasks, selectedDate, filterGoalIds]);
+    }, [allTasks, selectedDate, filterGoalIds, showManualOnly]);
 
     // Derived State: Daily Goal Stats
     const { completedCount, totalCount, progress } = useMemo(() => {
@@ -786,6 +818,32 @@ const StudyPlanner = () => {
         }
     };
 
+    const handleEditTaskName = (task: StudyTask) => {
+        setTaskToEditName(task);
+        setIsEditTaskNameModalOpen(true);
+    };
+
+    const handleSaveTaskName = async (newName: string) => {
+        if (!taskToEditName) return;
+        setIsUpdatingTaskName(true);
+
+        try {
+            const endpoint = taskToEditName.source_type === 'manual' || taskToEditName.is_manual
+                ? `/api/study-planner/tasks/manual/${taskToEditName.task_id}`
+                : `/api/study-planner/tasks/ai/${taskToEditName.task_id}`;
+
+            await api.put(endpoint, { title: newName });
+            await refreshAll();
+            showToast('Task name updated', 'success');
+            setIsEditTaskNameModalOpen(false);
+        } catch (error) {
+            console.error("Failed to update task name:", error);
+            showToast('Failed to update task name', 'error');
+        } finally {
+            setIsUpdatingTaskName(false);
+        }
+    };
+
     const handleSaveGoalName = async (newTitle: string) => {
         if (!goalToEdit) return;
         setIsSavingGoal(true);
@@ -913,6 +971,17 @@ const StudyPlanner = () => {
                         <div className="flex overflow-x-auto pb-4 gap-2 scrollbar-thin scrollbar-thumb-secondary-light/20 scrollbar-track-transparent">
                             {calendarDays.map((item, index) => {
                                 const isSelected = selectedDate.getDate() === item.date && selectedDate.getMonth() === item.fullDate.getMonth();
+
+                                // FIX: Use filtered dates if filter is ON
+                                let hasTask = item.hasTask;
+                                if (showManualOnly && manualTaskDates) {
+                                    const year = item.fullDate.getFullYear();
+                                    const month = String(item.fullDate.getMonth() + 1).padStart(2, '0');
+                                    const day = String(item.fullDate.getDate()).padStart(2, '0');
+                                    const dateStr = `${year}-${month}-${day}`;
+                                    hasTask = manualTaskDates.has(dateStr);
+                                }
+
                                 return (
                                     <button
                                         key={index}
@@ -926,7 +995,7 @@ const StudyPlanner = () => {
                                         <span className="text-xl font-bold">{item.date}</span>
                                         {/* Indicator dot */}
                                         <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' :
-                                            item.hasTask ? 'bg-primary' : 'bg-transparent'
+                                            hasTask ? 'bg-primary' : 'bg-transparent'
                                             }`}></div>
                                     </button>
                                 );
@@ -943,6 +1012,42 @@ const StudyPlanner = () => {
                                 </h3>
                             </div>
                             <div className="flex items-center gap-1">
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setIsFilterPopoverOpen(!isFilterPopoverOpen)}
+                                        className={`p-2 rounded-xl transition-colors ${showManualOnly ? 'bg-primary/10 text-primary' : 'text-primary hover:bg-primary/10'}`}
+                                        title="Filter Tasks"
+                                    >
+                                        <Filter className={`w-5 h-5 ${showManualOnly ? 'fill-current' : ''}`} />
+                                    </button>
+
+                                    {isFilterPopoverOpen && (
+                                        <>
+                                            <div
+                                                className="fixed inset-0 z-10"
+                                                onClick={() => setIsFilterPopoverOpen(false)}
+                                            />
+                                            <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-secondary-light/10 p-2 z-20 animate-in fade-in zoom-in-95 duration-200">
+                                                <label className="flex items-center gap-3 p-3 rounded-lg hover:bg-secondary-light/5 cursor-pointer transition-colors">
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${showManualOnly ? 'bg-primary border-primary' : 'border-secondary-light/30'}`}>
+                                                        {showManualOnly && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                                    </div>
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={showManualOnly}
+                                                        onChange={(e) => {
+                                                            setShowManualOnly(e.target.checked);
+                                                            // Keep popover open or close? Requirement says toggle ON/OFF.
+                                                        }}
+                                                    />
+                                                    <span className="text-sm font-medium text-secondary-dark">Show manual tasks only</span>
+                                                </label>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
                                 <button
                                     onClick={() => setIsPeakHourModalOpen(true)}
                                     className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors"
@@ -1049,6 +1154,16 @@ const StudyPlanner = () => {
                                                             }`}
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
+                                                        <button
+                                                            onClick={() => {
+                                                                handleEditTaskName(task);
+                                                                setActiveMenuTaskId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                            Edit Task Name
+                                                        </button>
                                                         <button
                                                             onClick={() => {
                                                                 setTaskToReschedule(task);
@@ -1601,6 +1716,17 @@ const StudyPlanner = () => {
                     </motion.div>
                 </div>
             )}
+            {/* Edit Task Name Modal */}
+            {isEditTaskNameModalOpen && taskToEditName && (
+                <EditTaskNameModal
+                    isOpen={isEditTaskNameModalOpen}
+                    onClose={() => setIsEditTaskNameModalOpen(false)}
+                    onSave={handleSaveTaskName}
+                    initialName={taskToEditName?.title || ''}
+                    isSaving={isUpdatingTaskName}
+                />
+            )}
+
             {/* Edit Goal Name Modal */}
             {isEditGoalModalOpen && goalToEdit && (
                 <EditGoalNameModal
@@ -1913,6 +2039,71 @@ function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: 
 };
 
 
+
+
+// --- Edit Task Name Modal ---
+const EditTaskNameModal = ({ isOpen, onClose, onSave, initialName, isSaving }: { isOpen: boolean, onClose: () => void, onSave: (name: string) => void, initialName: string, isSaving: boolean }) => {
+    const [name, setName] = useState(initialName);
+
+    useEffect(() => {
+        setName(initialName);
+    }, [initialName, isOpen]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+                <div className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-bold text-secondary-dark">Edit Task Name</h3>
+                        <button onClick={onClose} disabled={isSaving} className="p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                            <X className="w-5 h-5 text-secondary" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-secondary-dark mb-1">Task Name</label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full p-4 rounded-xl border border-secondary-light/30 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all font-medium text-secondary-dark"
+                                placeholder="Enter task name"
+                                disabled={isSaving}
+                            />
+                        </div>
+
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                onClick={onClose}
+                                disabled={isSaving}
+                                className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (name.trim()) onSave(name.trim());
+                                }}
+                                disabled={isSaving || !name.trim()}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                                {isSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
 
 // Edit Goal Name Modal
 function EditGoalNameModal({ goal, onClose, onSave, isSaving }: { goal: { id: number; title: string }, onClose: () => void, onSave: (title: string) => void, isSaving: boolean }) {

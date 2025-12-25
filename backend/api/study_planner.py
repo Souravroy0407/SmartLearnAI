@@ -356,6 +356,7 @@ def complete_ai_task(
 
 
 class TaskUpdate(BaseModel):
+    title: Optional[str] = None
     status: Optional[str] = None
     task_date: Optional[PyDate] = None
     task_time: Optional[datetime] = None
@@ -376,6 +377,8 @@ def update_ai_task(
     if not task:
         raise HTTPException(status_code=404, detail="AI Task not found")
 
+    if update_data.title:
+        task.title = update_data.title
     if update_data.status:
         task.task_status = update_data.status
     if update_data.task_date:
@@ -405,6 +408,8 @@ def update_manual_task(
     if not manual_task:
         raise HTTPException(status_code=404, detail="Manual Task not found")
 
+    if update_data.title:
+        manual_task.title = update_data.title
     if update_data.status:
         manual_task.status = update_data.status
     if update_data.task_date:
