@@ -31,10 +31,11 @@ class GeneratePlanRequest(BaseModel):
     start_date: PyDate
     end_date: PyDate
     hours_per_day: int
+    mode: Optional[str] = "create" # 'create', 'full_regenerate', 'extend_only', 'keep_existing'
 
 # --- Endpoints ---
 
-@router.post("/generate-tasks", response_model=List[StudyTaskResponse])
+@router.post("/generate-plan", response_model=List[StudyTaskResponse])
 def generate_tasks(
     request: GeneratePlanRequest,
     db: Session = Depends(get_db),
@@ -49,16 +50,54 @@ def generate_tasks(
     if not goal:
         raise HTTPException(status_code=404, detail="Study Goal not found")
 
-    # 1. Validate Dates
+    # Mode Handling
+    mode = request.mode or "create"
+    
+    # 1. Handle Deletion (if applicable)
+    if mode in ["full_regenerate", "create"]:
+        try:
+             # Delete EXISTING AI TASKS for this goal only
+             deleted_count = db.query(CreateTaskAI).filter(
+                 CreateTaskAI.goal_id == request.goal_id,
+                 CreateTaskAI.student_id == current_user.id
+             ).delete(synchronize_session=False)
+             print(f"[INFO] Deleted {deleted_count} tasks for goal {request.goal_id} (Mode: {mode})")
+             # Commit deletion before generation to ensure clean slate? 
+             # Or keep in same transaction. keeping in same transaction is safer for rollback.
+        except Exception as e:
+            db.rollback()
+            print(f"Error deleting tasks: {e}")
+            raise HTTPException(status_code=500, detail="Failed to clear existing tasks")
+
+    elif mode == "keep_existing":
+        # Do nothing, just return current tasks? Or empty list?
+        # Usually generator should return the *new* plan.
+        # If keeping existing, technically we generated nothing.
+        return []
+
+    elif mode == "extend_only":
+        # No deletion.
+        pass
+
+    # 2. Validate Dates (Applicable for generation phases)
     start_dt = request.start_date
     exam_dt = request.end_date
     
     if start_dt >= exam_dt:
-         raise HTTPException(status_code=400, detail="Start Date must be before End Date")
+         # In extend mode, start_dt might be very close to exam_dt or invalid if logic wasn't handled right in frontend
+         if mode == "extend_only" and start_dt > exam_dt:
+              # If start is AFTER end, maybe we just do nothing (gap is negative/zero)
+              return []
+         if start_dt == exam_dt:
+             # Just one day? Allowed?
+             # logic below supports it if total_days >= 1
+             pass
+         else:
+             raise HTTPException(status_code=400, detail="Start Date must be before End Date")
 
-    print(f"[DEBUG] Generating plan for Goal '{goal.title}'. Start: {start_dt}, End: {exam_dt}")
+    print(f"[DEBUG] Generating plan for Goal '{goal.title}'. Start: {start_dt}, End: {exam_dt}, Mode: {mode}")
     
-    # 2. Deterministic Task Generation
+    # 3. Deterministic Task Generation
     try:
         # Calculate Duration (Minutes)
         duration_minutes = request.hours_per_day * 60
@@ -73,8 +112,34 @@ def generate_tasks(
         
         created_tasks = []
         
+        # Determine starting sequence and existing dates if extending
+        start_seq = 1
+        existing_dates = set()
+        
+        if mode == "extend_only":
+            # fetch max sequence
+            last_task = db.query(CreateTaskAI).filter(
+                CreateTaskAI.goal_id == request.goal_id
+            ).order_by(CreateTaskAI.sequence_no.desc()).first()
+            
+            if last_task and last_task.sequence_no:
+                start_seq = last_task.sequence_no + 1
+                
+            # fetch existing dates to skip
+            existing_tasks_dates = db.query(CreateTaskAI.task_date).filter(
+                CreateTaskAI.goal_id == request.goal_id,
+                CreateTaskAI.student_id == current_user.id
+            ).all()
+            existing_dates = {t[0] for t in existing_tasks_dates}
+        
+        current_seq = start_seq
+        
         for i in range(total_days):
             current_date = start_dt + timedelta(days=i)
+            
+            # Skip if date already has tasks (ONLY for extend mode)
+            if mode == "extend_only" and current_date in existing_dates:
+                continue
             
             # Topic Distribution Logic
             day_topics = []
@@ -106,12 +171,13 @@ def generate_tasks(
                 task_time=task_time,
                 task_date=current_date,
                 duration_minutes=duration_minutes,
-                sequence_no=i + 1,
+                sequence_no=current_seq,
                 task_status='active'
             )
             
             db.add(task)
             created_tasks.append(task)
+            current_seq += 1
             
         db.commit()
         # Refresh to get IDs if needed, but returning list of objects works with ORM mode

@@ -8,6 +8,7 @@ export interface TimeSlot {
 
 export interface StudyTask {
     id: number;
+    goal_id?: number; // Added for consistency
     title: string;
     task_type: string; // 'Revision' | 'Practice' | 'Video Lecture' | etc.
     start_time: string; // ISO string

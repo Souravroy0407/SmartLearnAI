@@ -16,6 +16,7 @@ const toTitleCase = (str: string) => {
 export interface StudyTask {
     id: number;
     task_id: number; // Added for explicit backend ID matching
+    goal_id?: number; // Added for goal filtering
     title: string;
     task_type: string;
     start_time: string;
@@ -65,6 +66,7 @@ interface StudyPlannerContextType {
     addTasksBulk: (newTasks: StudyTask[]) => void;
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
+    updateGoal: (goalId: number, newTitle: string) => void; // Added for Edit Planner Name
     setUserEnergyPref: (pref: string) => void;
 }
 
@@ -237,6 +239,13 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setAllTasks(prev => [...prev, ...normalized]);
     };
 
+    const updateGoal = (goalId: number, newTitle: string) => {
+        setExams(prev => prev.map(e => e.exam.id === goalId ? {
+            ...e,
+            exam: { ...e.exam, title: toTitleCase(newTitle) }
+        } : e));
+    };
+
     // Reset on logout (if user becomes null)
     useEffect(() => {
         if (!user) {
@@ -267,6 +276,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             addTasksBulk,
             deleteTask,
             addTask,
+            updateGoal, // Export updateGoal
             setUserEnergyPref
         }}>
             {children}

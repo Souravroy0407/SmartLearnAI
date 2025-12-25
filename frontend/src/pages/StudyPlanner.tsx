@@ -26,7 +26,8 @@ const StudyPlanner = () => {
         setUserEnergyPref,
         refreshGoals,
         refreshAll,
-        addTasksBulk
+        addTasksBulk,
+        updateGoal
     } = useStudyPlanner();
 
     // Local UI State
@@ -54,10 +55,53 @@ const StudyPlanner = () => {
     const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
     const [isFetchingAI, setIsFetchingAI] = useState(false);
 
+    // Goal Editing State
+    const [goalToEdit, setGoalToEdit] = useState<{ id: number; title: string } | null>(null);
+    const [activeGoalMenuId, setActiveGoalMenuId] = useState<number | null>(null);
+    const [goalMenuPlacement, setGoalMenuPlacement] = useState<'top' | 'bottom'>('bottom');
+    const [isEditGoalModalOpen, setIsEditGoalModalOpen] = useState(false);
+    const [isSavingGoal, setIsSavingGoal] = useState(false);
+
+    // Goal Completion State
+    const [goalToComplete, setGoalToComplete] = useState<any>(null);
+    const [isCompletingGoal, setIsCompletingGoal] = useState(false);
+
+    // Change Exam Date Modal State
+    const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
+    const [dateChangeOption, setDateChangeOption] = useState<'update_all' | 'keep_existing' | 'add_new'>('update_all');
+    const [goalToChangeDate, setGoalToChangeDate] = useState<any | null>(null);
+
+    // AI Generation Modal State
+    const [genModalState, setGenModalState] = useState<{
+        initialGoalId?: number;
+        initialDate?: string;
+        mode?: 'create' | 'regenerate' | 'extend';
+        lastTaskDate?: string;
+    }>({});
+
     // Initial Data Load
     useEffect(() => {
         ensureDataLoaded();
     }, []);
+
+    // CLICK-OUTSIDE HANDLER for Goal Menu
+    // The menu and its button use e.stopPropagation(), so checking for document clicks
+    // is a robust way to detect "outside" clicks without complex refs.
+    useEffect(() => {
+        const handleDocumentClick = () => {
+            if (activeGoalMenuId !== null) {
+                setActiveGoalMenuId(null);
+            }
+        };
+
+        if (activeGoalMenuId !== null) {
+            document.addEventListener('click', handleDocumentClick);
+        }
+
+        return () => {
+            document.removeEventListener('click', handleDocumentClick);
+        };
+    }, [activeGoalMenuId]);
 
     // Derived State: Is Selected Date an Exam Day or Revision Day?
     const { isExamDay, isRevisionDay, isAfterAllExams } = useMemo(() => {
@@ -363,6 +407,26 @@ const StudyPlanner = () => {
         }
     };
 
+    const handleCompleteGoal = async () => {
+        if (!goalToComplete) return;
+
+        setIsCompletingGoal(true);
+        try {
+            await api.put(`/api/goals/${goalToComplete.exam.id}/complete`);
+
+            await refreshGoals();
+            await refreshAll();
+
+            setGoalToComplete(null);
+            showToast('Goal and tasks marked as completed!', 'success');
+        } catch (error) {
+            console.error("Failed to complete goal:", error);
+            showToast('Failed to mark goal as completed', 'error');
+        } finally {
+            setIsCompletingGoal(false);
+        }
+    };
+
     const handleRescheduleSave = async (updatedTaskPart: Partial<StudyTask>) => {
         if (!taskToReschedule) return;
 
@@ -589,6 +653,148 @@ const StudyPlanner = () => {
         }
     };
 
+    const [changeDateError, setChangeDateError] = useState('');
+    const [isChangingDate, setIsChangingDate] = useState(false);
+
+    const handleChangeDateConfirm = async (option: 'update_all' | 'keep_existing' | 'add_new', newDate: string) => {
+        if (!goalToChangeDate) return;
+        setChangeDateError('');
+
+        // Validation 1: Check if new date is in the past
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const selectedNewDate = new Date(newDate);
+        selectedNewDate.setHours(0, 0, 0, 0);
+
+        if (selectedNewDate < today) {
+            setChangeDateError('Exam date cannot be in the past!');
+            return;
+        }
+
+        // Validation 2: Check if new date is before the last existing task (unless regenerating)
+        if (option !== 'update_all') {
+            const goalId = goalToChangeDate.exam.id;
+            const goalTasks = allTasks.filter(t => t.goal_id === goalId);
+
+            if (goalTasks.length > 0) {
+                const lastTask = goalTasks.reduce((prev, current) => {
+                    // Use task_date if available (YYYY-MM-DD), fallback to start_time
+                    const prevD = prev.task_date ? new Date(prev.task_date) : new Date(prev.start_time);
+                    const currD = current.task_date ? new Date(current.task_date) : new Date(current.start_time);
+                    return (prevD > currD) ? prev : current;
+                });
+
+                const lastTaskDate = lastTask.task_date ? new Date(lastTask.task_date) : new Date(lastTask.start_time);
+                lastTaskDate.setHours(0, 0, 0, 0);
+
+                if (selectedNewDate < lastTaskDate) {
+                    setChangeDateError('New exam date cannot be before existing tasks. Use "Update entire planner" instead.');
+                    return;
+                }
+            }
+        }
+
+        setDateChangeOption(option);
+
+        if (option === 'keep_existing') {
+            setIsChangingDate(true);
+            // Pure backend update
+            try {
+                await api.patch(`/api/study-planner/goals/${goalToChangeDate.exam.id}`, { exam_date: newDate });
+                showToast('Exam date updated. Tasks remaining unchanged.', 'success');
+                setIsChangeDateModalOpen(false);
+                refreshGoals(); // Refresh goals to show new date
+            } catch (error: any) {
+                console.error("Failed to update exam date", error);
+                const msg = error.response?.data?.detail || 'Failed to update date';
+                setChangeDateError(msg);
+            } finally {
+                setIsChangingDate(false);
+            }
+        } else if (option === 'update_all') {
+            setIsChangingDate(true);
+            try {
+                // 1. Update Goal Date First
+                await api.patch(`/api/study-planner/goals/${goalToChangeDate.exam.id}`, { exam_date: newDate });
+                showToast('Exam date updated. Regenerating plan...', 'success');
+                setIsChangeDateModalOpen(false);
+                refreshGoals();
+
+                // 2. Redirect to AI Generator - Full Regenerate
+                setGenModalState({
+                    initialGoalId: goalToChangeDate.exam.id,
+                    initialDate: newDate,
+                    mode: 'regenerate'
+                });
+                setIsAIModalOpen(true);
+            } catch (error: any) {
+                console.error("Failed to update exam date", error);
+                const msg = error.response?.data?.detail || 'Failed to update date';
+                setChangeDateError(msg);
+            } finally {
+                setIsChangingDate(false);
+            }
+        } else if (option === 'add_new') {
+            setIsChangingDate(true);
+            try {
+                // 1. Update Goal Date First
+                await api.patch(`/api/study-planner/goals/${goalToChangeDate.exam.id}`, { exam_date: newDate });
+                showToast('Exam date updated. Extending plan...', 'success');
+                setIsChangeDateModalOpen(false);
+                refreshGoals();
+
+                // 2. Calculate last task date properly
+                let lastTaskDateStr = new Date().toISOString().split('T')[0];
+                const goalId = goalToChangeDate.exam.id;
+                const goalTasks = allTasks.filter(t => t.goal_id === goalId);
+
+                if (goalTasks.length > 0) {
+                    const lastTask = goalTasks.reduce((prev, current) => {
+                        const prevD = prev.task_date ? new Date(prev.task_date) : new Date(prev.start_time);
+                        const currD = current.task_date ? new Date(current.task_date) : new Date(current.start_time);
+                        return (prevD > currD) ? prev : current;
+                    });
+                    const d = lastTask.task_date ? new Date(lastTask.task_date) : new Date(lastTask.start_time);
+                    lastTaskDateStr = d.toISOString().split('T')[0];
+                }
+
+                // 3. Redirect to AI Generator - Extend Only
+                setGenModalState({
+                    initialGoalId: goalToChangeDate.exam.id,
+                    initialDate: newDate,
+                    mode: 'extend',
+                    lastTaskDate: lastTaskDateStr
+                });
+                setIsAIModalOpen(true);
+            } catch (error: any) {
+                console.error("Failed to update exam date/extend", error);
+                const msg = error.response?.data?.detail || 'Failed to update date';
+                setChangeDateError(msg);
+            } finally {
+                setIsChangingDate(false);
+            }
+        }
+    };
+
+    const handleSaveGoalName = async (newTitle: string) => {
+        if (!goalToEdit) return;
+        setIsSavingGoal(true);
+        try {
+            await api.patch(`/api/study-planner/goals/${goalToEdit.id}`, { title: newTitle });
+            // Optimistic update: Update local state immediately without refetch
+            updateGoal(goalToEdit.id, newTitle);
+
+            setIsEditGoalModalOpen(false);
+            setGoalToEdit(null);
+            showToast('Goal name updated', 'success');
+        } catch (error) {
+            console.error("Failed to update goal name:", error);
+            showToast('Failed to update goal', 'error');
+        } finally {
+            setIsSavingGoal(false);
+        }
+    };
+
     // Close menu when clicking outside or pressing Escape
     useEffect(() => {
         const handleClickOutside = () => setActiveMenuTaskId(null);
@@ -760,17 +966,20 @@ const StudyPlanner = () => {
                                     Create a task
                                 </button>
                             </div>
-                        ) : (
+                        ) : (dailyTasks && dailyTasks.length > 0) ? (
                             <div className={`space-y-4 ${isMuted ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {dailyTasks.map((task, index) => {
                                     // SAFE COLOR LOGIC:
                                     // AI tasks do not have colourtag, Manual tasks do.
                                     // We fallback to 'bg-primary' to prevent crashes.
-                                    const taskColor = (task as any).colourtag || task.color || 'bg-primary';
+                                    const rawColor = (task as any).colourtag || task.color || 'bg-primary';
+                                    const taskColor = typeof rawColor === 'string' ? rawColor : 'bg-primary';
+                                    const safeColorBase = taskColor.replace('bg-', 'bg-'); // Ensure no crash on replace
+                                    const safeColorText = taskColor.replace('bg-', '');
 
                                     return (
                                         <motion.div
-                                            key={task.id}
+                                            key={`${task.source_type || 'ai'}-${task.task_id}`}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: index * 0.1 }}
@@ -785,7 +994,7 @@ const StudyPlanner = () => {
 
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${taskColor.replace('bg-', 'bg-')}/10 text-${taskColor.replace('bg-', '')}`}>
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${safeColorBase}/10 text-${safeColorText}`}>
                                                         {task.task_type}
                                                     </span>
                                                     {task.status === 'completed' && (
@@ -867,7 +1076,7 @@ const StudyPlanner = () => {
                                     );
                                 })}
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 </div>
 
@@ -978,17 +1187,87 @@ const StudyPlanner = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Delete Button (Hover Only) */}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDeleteGoal(item);
-                                                }}
-                                                className="absolute top-2 right-2 p-1.5 text-secondary-light/50 hover:text-error hover:bg-error/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
-                                                title="Delete Goal"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            {/* Hover Mark Complete Button */}
+                                            {item.goal_status !== 'completed' && (
+                                                <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setGoalToComplete(item);
+                                                        }}
+                                                        className="flex items-center gap-1 px-2 py-1.5 bg-success/10 text-success hover:bg-success/20 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors shadow-sm"
+                                                        title="Mark Goal & Tasks Complete"
+                                                    >
+                                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                                        Complete
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {/* Goal Menu */}
+                                            <div className="absolute top-2 right-2 z-20">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Smart Positioning Logic for Goal Menu
+                                                        if (activeGoalMenuId !== item.exam.id) {
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                            const menuHeight = 180; // Approx height needed
+                                                            setGoalMenuPlacement(spaceBelow < menuHeight ? 'top' : 'bottom');
+                                                            setActiveGoalMenuId(item.exam.id);
+                                                        } else {
+                                                            setActiveGoalMenuId(null);
+                                                        }
+                                                    }}
+                                                    className={`p-1.5 rounded-lg transition-all ${activeGoalMenuId === item.exam.id
+                                                        ? 'bg-secondary-light/10 text-secondary'
+                                                        : 'text-secondary-light/50 hover:text-secondary hover:bg-secondary-light/10 opacity-0 group-hover:opacity-100'}`}
+                                                >
+                                                    <MoreVertical className="w-4 h-4" />
+                                                </button>
+
+                                                {activeGoalMenuId === item.exam.id && (
+                                                    <div
+                                                        className={`absolute right-0 w-48 bg-white rounded-xl shadow-xl border border-secondary-light/10 overflow-hidden z-30 ${goalMenuPlacement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'
+                                                            }`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <button
+                                                            onClick={() => {
+                                                                setGoalToEdit({ id: item.exam.id, title: item.exam.title });
+                                                                setIsEditGoalModalOpen(true);
+                                                                setActiveGoalMenuId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <Edit3 className="w-4 h-4" />
+                                                            Edit Planner Name
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setGoalToChangeDate(item);
+                                                                setIsChangeDateModalOpen(true);
+                                                                setActiveGoalMenuId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <CalendarIcon className="w-4 h-4" />
+                                                            Change Exam Date
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                handleDeleteGoal(item);
+                                                                setActiveGoalMenuId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                            Delete Goal
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -1039,6 +1318,10 @@ const StudyPlanner = () => {
                     refreshGoals(); // Refresh goals to ensure consistency/status updates if any
                 }}
                 goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title, deadline: e.exam.deadline }))}
+                initialGoalId={genModalState.initialGoalId}
+                initialDate={genModalState.initialDate}
+                mode={genModalState.mode}
+                lastTaskDate={genModalState.lastTaskDate}
             />
 
             <EnergyPreferenceModal
@@ -1234,6 +1517,47 @@ const StudyPlanner = () => {
                 </div>
             )}
 
+            {/* Complete Goal Confirmation Modal */}
+            {goalToComplete && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                    >
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center text-success mb-2">
+                                <CheckCircle2 className="w-8 h-8" />
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-bold text-secondary-dark mb-2">Identify as Complete?</h3>
+                                <p className="text-sm text-secondary">
+                                    Mark <span className="font-bold">"{goalToComplete.exam.title}"</span> and all its pending tasks as completed?
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 w-full mt-2">
+                                <button
+                                    onClick={() => setGoalToComplete(null)}
+                                    disabled={isCompletingGoal}
+                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-secondary bg-secondary-light/10 hover:bg-secondary-light/20 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleCompleteGoal}
+                                    disabled={isCompletingGoal}
+                                    className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-white bg-success hover:bg-success/90 shadow-lg shadow-success/20 transition-colors"
+                                >
+                                    {isCompletingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm'}
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
             {/* Updating Task Overlay */}
             {isUpdatingTask && (
                 <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -1249,6 +1573,30 @@ const StudyPlanner = () => {
                         <p className="text-secondary-light">Applying your schedule changes.</p>
                     </motion.div>
                 </div>
+            )}
+            {/* Edit Goal Name Modal */}
+            {isEditGoalModalOpen && goalToEdit && (
+                <EditGoalNameModal
+                    goal={goalToEdit}
+                    onClose={() => setIsEditGoalModalOpen(false)}
+                    onSave={handleSaveGoalName}
+                    isSaving={isSavingGoal}
+                />
+            )}
+
+            {/* Change Date Confirmation Modal */}
+            {isChangeDateModalOpen && goalToChangeDate && (
+                <ChangeDateModal
+                    onClose={() => {
+                        setIsChangeDateModalOpen(false);
+                        setChangeDateError('');
+                    }}
+                    onConfirm={handleChangeDateConfirm}
+                    initialOption={dateChangeOption}
+                    error={changeDateError}
+                    isLoading={isChangingDate}
+                    setError={setChangeDateError}
+                />
             )}
         </div >
     );
@@ -1428,7 +1776,7 @@ function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: 
 
                                 return (
                                     <button
-                                        key={i}
+                                        key={s.iso_date} // STABLE KEY: Use Date string instead of index
                                         onClick={() => {
                                             setSelectedDateIdx(i);
                                             setSelectedSlot(null);
@@ -1483,14 +1831,14 @@ function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: 
                     <div className="flex-1 overflow-y-auto pr-2">
                         {activeDate ? (
                             <div className="grid grid-cols-2 gap-3">
-                                {activeDate.slots.map((slot: any, idx: number) => {
+                                {activeDate.slots.map((slot: any) => {
                                     const start = new Date(slot.start);
                                     const end = new Date(slot.end);
                                     const isSelected = selectedSlot === slot;
 
                                     return (
                                         <button
-                                            key={idx}
+                                            key={slot.start} // STABLE KEY: Use Slot Start Time
                                             onClick={() => setSelectedSlot(slot)}
                                             className={`p-4 rounded-xl border-2 transition-all text-left ${isSelected
                                                 ? 'border-primary bg-primary/5 ring-1 ring-primary'
@@ -1536,5 +1884,198 @@ function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: 
         </div>
     );
 };
+
+
+
+// Edit Goal Name Modal
+function EditGoalNameModal({ goal, onClose, onSave, isSaving }: { goal: { id: number; title: string }, onClose: () => void, onSave: (title: string) => void, isSaving: boolean }) {
+    const [title, setTitle] = useState(goal.title);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (title.trim()) {
+            onSave(title.trim());
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+            >
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-bold text-secondary-dark">Edit Goal Name</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-secondary" />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-secondary-dark mb-2">Planner Name</label>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50 text-secondary-dark font-medium"
+                            placeholder="Enter planner name"
+                            autoFocus
+                        />
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                            disabled={isSaving}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={!title.trim() || isSaving}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                'Save'
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </motion.div>
+        </div>
+    );
+}
+
+// Change Date Confirmation Modal
+// Change Date Confirmation Modal
+function ChangeDateModal({ onClose, onConfirm, initialOption, error, isLoading, setError }: {
+    onClose: () => void;
+    onConfirm: (option: 'update_all' | 'keep_existing' | 'add_new', newDate: string) => void;
+    initialOption: 'update_all' | 'keep_existing' | 'add_new';
+    error?: string;
+    isLoading?: boolean;
+    setError?: (msg: string) => void;
+}) {
+    const [selectedOption, setSelectedOption] = useState<'update_all' | 'keep_existing' | 'add_new'>(initialOption);
+    const [newDate, setNewDate] = useState('');
+
+    // Clear error when user changes input
+    useEffect(() => {
+        if (error && setError) setError('');
+    }, [newDate, selectedOption]);
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+            >
+                <h3 className="text-xl font-bold text-secondary-dark mb-4">Update Exam Date</h3>
+                <p className="text-secondary-dark mb-4 text-sm">
+                    Changing the exam date affects your study plan. Please select the new date and how to proceed.
+                </p>
+
+                {error && (
+                    <div className="bg-error/10 text-error text-sm p-3 rounded-lg mb-4 font-medium animate-pulse">
+                        {error}
+                    </div>
+                )}
+
+                <div className="mb-6">
+                    <label className="block text-sm font-bold text-secondary-dark mb-2">New Exam Date</label>
+                    <input
+                        type="date"
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        disabled={isLoading}
+                        className="w-full px-4 py-3 rounded-xl border border-secondary-light/30 focus:outline-none focus:ring-2 focus:ring-primary/50 text-secondary-dark font-medium disabled:opacity-50"
+                    />
+                </div>
+
+                <div className="space-y-3 mb-6">
+                    <label className={`flex items-start gap-3 p-3 rounded-xl border border-secondary-light/20 cursor-pointer hover:bg-secondary-light/5 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <input
+                            type="radio"
+                            name="dateOption"
+                            className="mt-1 w-4 h-4 text-primary focus:ring-primary"
+                            checked={selectedOption === 'update_all'}
+                            onChange={() => setSelectedOption('update_all')}
+                            disabled={isLoading}
+                        />
+                        <div>
+                            <span className="block text-sm font-bold text-secondary-dark">Update entire planner</span>
+                            <span className="block text-xs text-secondary-light">(Recommended) Full re-generation.</span>
+                        </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-xl border border-secondary-light/20 cursor-pointer hover:bg-secondary-light/5 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <input
+                            type="radio"
+                            name="dateOption"
+                            className="mt-1 w-4 h-4 text-primary focus:ring-primary"
+                            checked={selectedOption === 'keep_existing'}
+                            onChange={() => setSelectedOption('keep_existing')}
+                            disabled={isLoading}
+                        />
+                        <div>
+                            <span className="block text-sm font-bold text-secondary-dark">Keep existing tasks</span>
+                            <span className="block text-xs text-secondary-light">Only updates the end date.</span>
+                        </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-xl border border-secondary-light/20 cursor-pointer hover:bg-secondary-light/5 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <input
+                            type="radio"
+                            name="dateOption"
+                            className="mt-1 w-4 h-4 text-primary focus:ring-primary"
+                            checked={selectedOption === 'add_new'}
+                            onChange={() => setSelectedOption('add_new')}
+                            disabled={isLoading}
+                        />
+                        <div>
+                            <span className="block text-sm font-bold text-secondary-dark">Add tasks only</span>
+                            <span className="block text-xs text-secondary-light">Fills the gap with new tasks.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 px-4 py-3 border border-secondary-light/30 text-secondary-dark font-medium rounded-xl hover:bg-secondary-light/5 transition-colors"
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => onConfirm(selectedOption, newDate)}
+                        disabled={!newDate || isLoading}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Saving...
+                            </>
+                        ) : (
+                            'Continue'
+                        )}
+                    </button>
+                </div>
+            </motion.div>
+        </div>
+    );
+}
 
 export default StudyPlanner;
