@@ -164,6 +164,7 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             const newTasks = response.data.map((t: any) => ({
                 id: t.task_id,
                 task_id: t.task_id, // Map explicitly
+                goal_id: t.goal_id, // Added for goal filtering
                 title: toTitleCase(t.title),
                 task_type: t.title.toLowerCase().includes('exam') ? 'Exam' : 'Study',
                 start_time: t.task_time,

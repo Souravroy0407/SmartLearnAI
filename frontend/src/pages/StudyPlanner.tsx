@@ -66,6 +66,10 @@ const StudyPlanner = () => {
     const [goalToComplete, setGoalToComplete] = useState<any>(null);
     const [isCompletingGoal, setIsCompletingGoal] = useState(false);
 
+    // Goal Filter State (New)
+    // Goal Filter State (Multi-Select)
+    const [filterGoalIds, setFilterGoalIds] = useState<Set<number>>(new Set());
+
     // Change Exam Date Modal State
     const [isChangeDateModalOpen, setIsChangeDateModalOpen] = useState(false);
     const [dateChangeOption, setDateChangeOption] = useState<'update_all' | 'keep_existing' | 'add_new'>('update_all');
@@ -104,7 +108,7 @@ const StudyPlanner = () => {
     }, [activeGoalMenuId]);
 
     // Derived State: Is Selected Date an Exam Day or Revision Day?
-    const { isExamDay, isRevisionDay, isAfterAllExams } = useMemo(() => {
+    const { isExamDay, isRevisionDay } = useMemo(() => {
         const startOfSelected = new Date(selectedDate);
         startOfSelected.setHours(0, 0, 0, 0);
 
@@ -130,27 +134,27 @@ const StudyPlanner = () => {
     // Derived State: Filter Tasks for Selected Date
     // Derived State: Filter Tasks for Selected Date
     const dailyTasks = useMemo(() => {
-        // if (isAfterAllExams) return []; // Removed to allow tasks beyond exam dates (e.g. generic goals)
-
         const year = selectedDate.getFullYear();
         const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
         const day = String(selectedDate.getDate()).padStart(2, '0');
         const formattedSelected = `${year}-${month}-${day}`;
 
-        return allTasks.filter(t => {
-            // Robust check: Compare date strings directly (YYYY-MM-DD)
-            // This prevents timezone mishaps with UTC timestamps
-            if (t.task_date) {
-                return t.task_date === formattedSelected;
-            }
+        return allTasks.filter(task => {
+            // 1️⃣ Date must match FIRST
+            const taskDate = task.task_date
+                ? task.task_date
+                : task.start_time?.split('T')[0];
 
-            // Fallback for legacy tasks without task_date (shouldn't exist anymore for new tasks)
-            const tDate = new Date(t.start_time);
-            return tDate.getDate() === selectedDate.getDate() &&
-                tDate.getMonth() === selectedDate.getMonth() &&
-                tDate.getFullYear() === selectedDate.getFullYear();
+            if (taskDate !== formattedSelected) return false;
+
+            // 2️⃣ If no goals selected → allow
+            if (filterGoalIds.size === 0) return true;
+
+            // 3️⃣ Goal filter (safe numeric comparison)
+            const taskGoalId = task.goal_id ? Number(task.goal_id) : null;
+            return taskGoalId !== null && filterGoalIds.has(taskGoalId);
         });
-    }, [allTasks, selectedDate, isAfterAllExams]);
+    }, [allTasks, selectedDate, filterGoalIds]);
 
     // Derived State: Daily Goal Stats
     const { completedCount, totalCount, progress } = useMemo(() => {
@@ -1138,6 +1142,34 @@ const StudyPlanner = () => {
 
                                     return (
                                         <div key={item.exam.id} className="relative flex gap-4 items-center p-4 hover:bg-secondary-light/5 rounded-2xl transition-colors group cursor-default">
+
+                                            {/* CHECKBOX: Filter Toggle (Left of Calendar) */}
+                                            <div
+                                                className={`flex items-center justify-center -mr-1 transition-all ${filterGoalIds.has(item.exam.id) ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'
+                                                    }`}
+                                            >
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setFilterGoalIds(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(item.exam.id)) {
+                                                                next.delete(item.exam.id);
+                                                            } else {
+                                                                next.add(item.exam.id);
+                                                            }
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${filterGoalIds.has(item.exam.id)
+                                                        ? 'bg-primary border-primary text-white'
+                                                        : 'bg-white border-secondary-light/30 hover:border-primary text-transparent'
+                                                        }`}
+                                                >
+                                                    <CheckCircle2 className="w-3.5 h-3.5 fill-current" />
+                                                </button>
+                                            </div>
+
                                             {/* Column 1: Redesigned Date Badge */}
                                             {/* [ 24 ] \n Wed \n 2025 */}
                                             <div className={`flex flex-col items-center justify-center w-16 px-1 py-2 rounded-2xl border flex-shrink-0 ${examDate.getFullYear() === 1970
