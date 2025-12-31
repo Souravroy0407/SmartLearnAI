@@ -15,6 +15,8 @@ const toTitleCase = (str: string) => {
 // Types (Moved from StudyPlanner.tsx)
 export interface StudyTask {
     id: number;
+    task_id: number; // Added for explicit backend ID matching
+    goal_id?: number; // Added for goal filtering
     title: string;
     task_type: string;
     start_time: string;
@@ -22,6 +24,8 @@ export interface StudyTask {
     duration_minutes: number;
     status: string;
     color: string;
+    is_manual?: boolean; // Added for Manual Task differentiation
+    source_type?: 'ai' | 'manual'; // Added for conditional delete logic
 }
 
 export interface ExamResponse {
@@ -62,6 +66,8 @@ interface StudyPlannerContextType {
     addTasksBulk: (newTasks: StudyTask[]) => void;
     deleteTask: (taskId: number) => void;
     addTask: (newTask: StudyTask) => void;
+    updateGoal: (goalId: number, newTitle: string) => void; // Added for Edit Planner Name
+    updateGoalStatus: (goalId: number, status: string) => void;
     setUserEnergyPref: (pref: string) => void;
 }
 
@@ -158,13 +164,17 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             const response = await api.get('/api/study-planner/tasks');
             const newTasks = response.data.map((t: any) => ({
                 id: t.task_id,
+                task_id: t.task_id, // Map explicitly
+                goal_id: t.goal_id, // Added for goal filtering
                 title: toTitleCase(t.title),
                 task_type: t.title.toLowerCase().includes('exam') ? 'Exam' : 'Study',
                 start_time: t.task_time,
                 task_date: t.task_date,
                 duration_minutes: t.duration_minutes || 60,
                 status: t.task_status,
-                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary'
+                color: t.task_status === 'completed' ? 'bg-success' : 'bg-primary',
+                is_manual: t.is_manual || false,
+                source_type: (t.is_manual || t.task_type === 'manual') ? 'manual' : 'ai' // Canonical source type tracking
             }));
             setAllTasks(newTasks);
             calculateCalendarRange(newTasks);
@@ -231,6 +241,20 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         setAllTasks(prev => [...prev, ...normalized]);
     };
 
+    const updateGoal = (goalId: number, newTitle: string) => {
+        setExams(prev => prev.map(e => e.exam.id === goalId ? {
+            ...e,
+            exam: { ...e.exam, title: toTitleCase(newTitle) }
+        } : e));
+    };
+
+    const updateGoalStatus = (goalId: number, status: string) => {
+        setExams(prev => prev.map(e => e.exam.id === goalId ? {
+            ...e,
+            goal_status: status
+        } : e));
+    };
+
     // Reset on logout (if user becomes null)
     useEffect(() => {
         if (!user) {
@@ -261,6 +285,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             addTasksBulk,
             deleteTask,
             addTask,
+            updateGoal, // Export updateGoal
+            updateGoalStatus,
             setUserEnergyPref
         }}>
             {children}
