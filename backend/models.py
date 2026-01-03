@@ -16,9 +16,11 @@ class User(Base):
     avatar_data = Column(LargeBinary)
     avatar_content_type = Column(String(50))
     role = Column(String(50))
+    status = Column(String(50), default="active")  # Added status
 
     teacher_profile = relationship("Teacher", back_populates="user", uselist=False)
     student_profile = relationship("Student", back_populates="user", uselist=False)
+    admin_profile = relationship("Admin", back_populates="user", uselist=False)
 
 # ===================== TEACHERS =====================
 
@@ -54,6 +56,17 @@ class Student(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="student_profile")
     quiz_attempts = relationship("QuizAttempt", back_populates="student")
+
+# ===================== ADMINS =====================
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="admin_profile")
 
 # ===================== STUDENT–TEACHER FOLLOW =====================
 

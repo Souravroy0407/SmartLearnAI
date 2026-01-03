@@ -19,7 +19,7 @@ def delete_goal(
         raise HTTPException(status_code=404, detail="Goal not found")
 
     # Verify ownership
-    if goal.student_id != current_user.id:
+    if not current_user.student_profile or goal.student_id != current_user.student_profile.id:
         # Note: In a real app we might check if user is admin, but for now strict ownership
         raise HTTPException(status_code=403, detail="Not authorized to delete this goal")
 
@@ -43,7 +43,7 @@ def complete_goal(
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
 
-    if goal.student_id != current_user.id:
+    if not current_user.student_profile or goal.student_id != current_user.student_profile.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
@@ -58,7 +58,7 @@ def complete_goal(
         # Update AI Tasks
         db.query(CreateTaskAI).filter(
             CreateTaskAI.goal_id == goal_id,
-            CreateTaskAI.student_id == current_user.id
+            CreateTaskAI.student_id == current_user.student_profile.id
         ).update({CreateTaskAI.task_status: status}, synchronize_session=False)
 
         # 4. Manual Tasks - (Skip as discussed in previous analysis - no safe link)

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, RefreshCw, BarChart2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuiz, type Quiz } from '../../context/QuizContext';
+import { formatDateTime } from '../../utils/date';
 
 interface QuizDetailsModalProps {
     quiz: Quiz;
@@ -30,7 +31,7 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                         </div>
                         <div>
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Published On</p>
-                            <p className="text-gray-800 font-medium text-sm">{new Date(quiz.created_at).toLocaleString()}</p>
+                            <p className="text-gray-800 font-medium text-sm">{formatDateTime(quiz.created_at)}</p>
                         </div>
                     </div>
 
@@ -41,7 +42,7 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                         <div>
                             <p className={`text-xs font-bold uppercase tracking-wider ${quiz.deadline ? 'text-red-500/70' : 'text-gray-500'}`}>Deadline</p>
                             <p className={`font-medium text-sm ${quiz.deadline ? 'text-red-700' : 'text-gray-800'}`}>
-                                {quiz.deadline ? new Date(quiz.deadline).toLocaleString() : 'No Deadline'}
+                                {quiz.deadline ? formatDateTime(quiz.deadline) : 'No Deadline'}
                             </p>
                         </div>
                     </div>
@@ -259,10 +260,10 @@ const StudentQuizList = () => {
                                             }}
                                             disabled={uiStatus === 'EXPIRED' && quiz.status !== 'attempted'}
                                             className={`py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg hover:-translate-y-0.5 active:translate-y-0 ${quiz.status === 'attempted'
-                                                    ? 'bg-green-600 text-white shadow-green-200 hover:shadow-green-300 hover:bg-green-700'
-                                                    : uiStatus === 'EXPIRED'
-                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
-                                                        : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
+                                                ? 'bg-green-600 text-white shadow-green-200 hover:shadow-green-300 hover:bg-green-700'
+                                                : uiStatus === 'EXPIRED'
+                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none'
+                                                    : 'bg-primary text-white hover:bg-primary-dark shadow-primary/25 hover:shadow-primary/40'
                                                 }`}
                                         >
                                             {quiz.status === 'attempted' ? (

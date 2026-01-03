@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../api/axios';
+import { formatDate } from '../../utils/date';
 import { FileText, Link, Upload, Clock, Calendar, CheckCircle, ExternalLink } from 'lucide-react';
 import Toast, { type ToastType } from '../../components/Toast';
 
@@ -168,7 +169,7 @@ const StudentExamList = () => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Calendar className="w-4 h-4" />
-                                    <span>Due: {new Date(exam.deadline).toLocaleDateString()}</span>
+                                    <span>Due: {formatDate(exam.deadline)}</span>
                                 </div>
                                 {status === 'graded' && (
                                     <div className="mt-2 text-primary font-bold">

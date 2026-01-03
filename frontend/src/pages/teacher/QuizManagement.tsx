@@ -5,6 +5,7 @@ import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
 import Toast, { type ToastType } from '../../components/Toast';
 import { useQuiz, type Quiz } from '../../context/QuizContext';
+import { formatDateTime, formatDate, formatTime } from '../../utils/date';
 
 interface QuizDetailsModalProps {
     quiz: Quiz;
@@ -33,7 +34,7 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                         </div>
                         <div>
                             <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Published On</p>
-                            <p className="text-gray-800 font-medium text-sm">{new Date(quiz.created_at).toLocaleString()}</p>
+                            <p className="text-gray-800 font-medium text-sm">{formatDateTime(quiz.created_at)}</p>
                         </div>
                     </div>
 
@@ -44,7 +45,7 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                         <div>
                             <p className={`text-xs font-bold uppercase tracking-wider ${quiz.deadline ? 'text-red-500/70' : 'text-gray-500'}`}>Deadline</p>
                             <p className={`font-medium text-sm ${quiz.deadline ? 'text-red-700' : 'text-gray-800'}`}>
-                                {quiz.deadline ? new Date(quiz.deadline).toLocaleString() : 'No Deadline'}
+                                {quiz.deadline ? formatDateTime(quiz.deadline) : 'No Deadline'}
                             </p>
                         </div>
                     </div>
@@ -290,10 +291,10 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
                                                         <p className="font-medium text-gray-800 text-sm">
-                                                            {new Date(attempt.submitted_at).toLocaleDateString()}
+                                                            {formatDate(attempt.submitted_at)}
                                                         </p>
                                                         <p className="text-xs text-gray-400">
-                                                            {new Date(attempt.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            {formatTime(attempt.submitted_at)}
                                                         </p>
                                                         {attempt.time_taken && attempt.time_taken !== '—' ? (
                                                             <p className="text-xs text-gray-600 mt-1 flex items-center justify-end gap-1 font-medium bg-gray-100 px-2 py-0.5 rounded-lg w-fit ml-auto">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../api/axios';
+import { formatDate, formatDateTime } from '../../utils/date';
 import { Plus, Link, Upload, Calendar, FileText, X, Check } from 'lucide-react';
 import Toast, { type ToastType } from '../../components/Toast';
 
@@ -160,7 +161,7 @@ const ExamManage = () => {
 
                         <div className="flex items-center gap-2 text-sm text-secondary mb-4">
                             <Calendar className="w-4 h-4" />
-                            <span>Deadline: {new Date(exam.deadline).toLocaleDateString()}</span>
+                            <span>Deadline: {formatDate(exam.deadline)}</span>
                         </div>
 
                         <button
@@ -285,7 +286,7 @@ const ExamManage = () => {
                                     <div>
                                         <h4 className="font-bold text-secondary-dark">{sub.student_name}</h4>
                                         <p className="text-sm text-secondary">{sub.student_email}</p>
-                                        <p className="text-xs text-gray-500 mt-1">Submitted: {new Date(sub.submission.submitted_at).toLocaleString()}</p>
+                                        <p className="text-xs text-gray-500 mt-1">Submitted: {formatDateTime(sub.submission.submitted_at)}</p>
 
                                         {sub.submission.has_file && (
                                             <a

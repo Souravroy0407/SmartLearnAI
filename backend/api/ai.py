@@ -41,10 +41,13 @@ def generate_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     # 0. Validate Goal ownership
     goal = db.query(StudyGoal).filter(
         StudyGoal.goal_id == request.goal_id,
-        StudyGoal.student_id == current_user.id
+        StudyGoal.student_id == current_user.student_profile.id
     ).first()
     
     if not goal:
@@ -59,7 +62,7 @@ def generate_tasks(
              # Delete EXISTING AI TASKS for this goal only
              deleted_count = db.query(CreateTaskAI).filter(
                  CreateTaskAI.goal_id == request.goal_id,
-                 CreateTaskAI.student_id == current_user.id
+                 CreateTaskAI.student_id == current_user.student_profile.id
              ).delete(synchronize_session=False)
              print(f"[INFO] Deleted {deleted_count} tasks for goal {request.goal_id} (Mode: {mode})")
              # Commit deletion before generation to ensure clean slate? 
@@ -128,7 +131,7 @@ def generate_tasks(
             # fetch existing dates to skip
             existing_tasks_dates = db.query(CreateTaskAI.task_date).filter(
                 CreateTaskAI.goal_id == request.goal_id,
-                CreateTaskAI.student_id == current_user.id
+                CreateTaskAI.student_id == current_user.student_profile.id
             ).all()
             existing_dates = {t[0] for t in existing_tasks_dates}
         

@@ -23,6 +23,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     role: str
+    status: str  # Added status
     avatar_url: Optional[str] = None
 
     class Config:
