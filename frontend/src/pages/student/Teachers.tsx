@@ -1,8 +1,33 @@
 import { useState, useEffect } from 'react';
-import axios from '../../api/axios';
+import axios, { API_BASE_URL } from '../../api/axios';
 import { Search, UserPlus, UserCheck, Star, Briefcase, GraduationCap, Loader2, RefreshCw } from 'lucide-react';
 import Toast, { type ToastType } from '../../components/Toast';
 import { useTeacher, type Teacher } from '../../context/TeacherContext';
+
+
+const TeacherAvatar = ({ teacher }: { teacher: Teacher }) => {
+    const [imgError, setImgError] = useState(false);
+    const avatarUrl = teacher.avatar_url?.startsWith('http')
+        ? teacher.avatar_url
+        : `${API_BASE_URL}${teacher.avatar_url}`;
+
+    if (!teacher.avatar_url || imgError) {
+        return (
+            <div className="w-full h-full flex items-center justify-center text-gray-400 font-bold text-2xl bg-gray-50">
+                {teacher.full_name.charAt(0)}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={avatarUrl}
+            alt={teacher.full_name}
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+        />
+    );
+};
 
 const Teachers = () => {
     const { teachers, loading, fetchTeachers, updateTeacherState } = useTeacher();
@@ -122,13 +147,7 @@ const Teachers = () => {
 
                             <div className="relative flex flex-col items-center text-center mb-6">
                                 <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg mb-4 overflow-hidden bg-gray-100 flex-shrink-0">
-                                    {teacher.avatar_url ? (
-                                        <img src={teacher.avatar_url} alt={teacher.full_name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-gray-400 font-bold text-2xl bg-gray-50">
-                                            {teacher.full_name.charAt(0)}
-                                        </div>
-                                    )}
+                                    <TeacherAvatar teacher={teacher} />
                                 </div>
                                 <h3 className="text-xl font-bold text-gray-900 mb-1">{teacher.full_name}</h3>
                                 <p className="text-primary font-medium text-sm mb-3 flex items-center gap-1">
