@@ -119,16 +119,20 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
         
         # Calculate expiry
         if q.deadline:
-            # Ensure deadline is aware for comparison or make now naive if deadline is naive
-            # Safest approach: treat deadline as UTC
+            # Ensure deadline is aware for comparison
+            # Treat naive DB value as UTC (Strict Source of Truth)
             deadline_val = q.deadline
             if deadline_val.tzinfo is None:
-                # Handle naive datetime (assume system local time)
-                # Convert to UTC-aware
-                deadline_val = deadline_val.astimezone(timezone.utc)
+                deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+            else:
+                 # Already aware, convert to UTC to be safe
+                 deadline_val = deadline_val.astimezone(timezone.utc)
             
             if now > deadline_val:
                 is_expired = True
+
+        # Ensure the response uses the aware UTC datetime which serializes to ISO 8601 with Z
+        deadline_response = deadline_val if q.deadline else None
 
         attempt = attempts_map.get(q.id)
         if attempt:
@@ -144,7 +148,7 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "description": q.description,
             "duration_minutes": q.duration_minutes,
             "created_at": q.created_at,
-            "deadline": q.deadline,
+            "deadline": deadline_response,
             "difficulty": q.difficulty,
             "topic": q.topic,
             "questions_count": counts_map.get(q.id, 0),
@@ -211,6 +215,8 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
         # Strict expiry check with UTC awareness
         deadline_val = quiz.deadline
         if deadline_val.tzinfo is None:
+             deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
              deadline_val = deadline_val.astimezone(timezone.utc)
         
         now = datetime.now(timezone.utc)
@@ -427,17 +433,33 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
     deadline_dt = None
     if quiz_data.deadline:
         try:
-            deadline_dt = datetime.fromisoformat(quiz_data.deadline.replace('Z', '+00:00'))
+            # Assume strict ISO 8601 from frontend
+            # If handling potential "Z" suffix manually
+            deadline_str = quiz_data.deadline.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(deadline_str)
+            
+            # Normalize to UTC
+            if dt.tzinfo is None:
+                # If naive, assume it's already UTC (as frontend should send UTC)
+                # OR assume local server time? 
+                # User mandate: "Treat UTC as the single source of truth... Convert incoming to UTC"
+                # If frontend sends "2026-01-02T18:29:00Z", fromisoformat handles tzinfo.
+                # If frontend sends naive "2026-01-02T18:29:00", we should assume UTC or error out. 
+                # Let's enforce UTC.
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+                
+            deadline_dt = dt
         except ValueError:
-            # Handle MM/DD/YYYY etc if needed, or just let it fail/be specific
-            pass
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected ISO 8601 UTC.")
 
     new_quiz = Quiz(
         title=quiz_data.title,
         description=quiz_data.description,
         duration_minutes=quiz_data.duration_minutes,
         teacher_id=teacher_id,
-        created_at=datetime.utcnow(), # Use datetime object
+        created_at=datetime.now(timezone.utc), # Explicit UTC
         deadline=deadline_dt,      # Use datetime object
         difficulty=quiz_data.difficulty,
         topic=quiz_data.topic
@@ -493,8 +515,14 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         })
     
     # Check deadline
-    if quiz.deadline:
-        if datetime.utcnow() > quiz.deadline:
+    deadline_val = quiz.deadline
+    if deadline_val:
+        if deadline_val.tzinfo is None:
+             deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
+             deadline_val = deadline_val.astimezone(timezone.utc)
+
+        if datetime.now(timezone.utc) > deadline_val:
              raise HTTPException(status_code=400, detail="Quiz has expired")
 
     return {
@@ -502,7 +530,7 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         "title": quiz.title,
         "description": quiz.description,
         "duration_minutes": quiz.duration_minutes,
-        "deadline": quiz.deadline,
+        "deadline": deadline_val, # Returns aware UTC datetime
         "questions": questions_data
     }
 
@@ -560,7 +588,13 @@ def get_quiz_status(quiz_id: int, db: Session = Depends(get_db), current_user: U
     # Check for expiration
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if quiz and quiz.deadline:
-        if datetime.utcnow() > quiz.deadline:
+        deadline_val = quiz.deadline
+        if deadline_val.tzinfo is None:
+            deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
+            deadline_val = deadline_val.astimezone(timezone.utc)
+
+        if datetime.now(timezone.utc) > deadline_val:
             return {"status": "expired"}
             
     return {"status": "active"}
