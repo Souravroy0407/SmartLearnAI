@@ -6,6 +6,7 @@ import { useAuth } from './AuthContext';
 export interface Teacher {
     id: number;
     full_name: string;
+    username: string; // Added username
     avatar_url?: string;
     subjects?: string;
     experience?: string;

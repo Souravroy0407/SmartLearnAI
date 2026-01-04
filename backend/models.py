@@ -29,6 +29,7 @@ class Teacher(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=False)
     full_name = Column(String(255))
     professional_title = Column(String(100))
     bio = Column(String(1000))

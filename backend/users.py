@@ -43,13 +43,33 @@ class TeacherResponse(UserResponse):
     linkedin_url: Optional[str] = None
     website_url: Optional[str] = None
     
+class TeacherResponse(UserResponse):
+    bio: Optional[str] = None
+    subjects: Optional[str] = None
+    experience: Optional[str] = None
+    price_label: Optional[str] = None
+    username: Optional[str] = None  # Added username
+    
+    # Profile V2
+    professional_title: Optional[str] = None
+    education: Optional[str] = None
+    teaching_languages: Optional[str] = None
+    teaching_style: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    website_url: Optional[str] = None
+    
     is_following: bool = False
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    
     # Teacher Fields
+    username: Optional[str] = None  # Added username
     bio: Optional[str] = None
     subjects: Optional[str] = None
     experience: Optional[str] = None
@@ -122,6 +142,10 @@ def read_user_me(current_user: User = Depends(get_current_user), db: Session = D
             response_data.website_url = teacher_profile.website_url
             response_data.full_name = teacher_profile.full_name or current_user.full_name
             
+            response_data.website_url = teacher_profile.website_url
+            response_data.full_name = teacher_profile.full_name or current_user.full_name
+            response_data.username = teacher_profile.username # Populate username
+            
             return response_data
             
     elif current_user.role == "student":
@@ -163,7 +187,34 @@ def update_profile(user_update: UserUpdate, current_user: User = Depends(get_cur
         if user_update.teaching_languages is not None: teacher_profile.teaching_languages = user_update.teaching_languages
         if user_update.teaching_style is not None: teacher_profile.teaching_style = user_update.teaching_style
         if user_update.linkedin_url is not None: teacher_profile.linkedin_url = user_update.linkedin_url
+        if user_update.full_name is not None: teacher_profile.full_name = user_update.full_name
+        if user_update.bio is not None: teacher_profile.bio = user_update.bio
+        if user_update.subjects is not None: teacher_profile.subjects = user_update.subjects
+        if user_update.experience is not None: teacher_profile.experience = user_update.experience
+        if user_update.professional_title is not None: teacher_profile.professional_title = user_update.professional_title
+        if user_update.education is not None: teacher_profile.education = user_update.education
+        if user_update.teaching_languages is not None: teacher_profile.teaching_languages = user_update.teaching_languages
+        if user_update.teaching_style is not None: teacher_profile.teaching_style = user_update.teaching_style
+        if user_update.linkedin_url is not None: teacher_profile.linkedin_url = user_update.linkedin_url
         if user_update.website_url is not None: teacher_profile.website_url = user_update.website_url
+
+        if user_update.username is not None:
+            # Strip @ if present
+            clean_username = user_update.username.lstrip('@')
+            
+            # Check for uniqueness
+            existing = db.query(Teacher).filter(
+                Teacher.username == clean_username, 
+                Teacher.id != teacher_profile.id
+            ).first()
+            
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username already taken"
+                )
+            
+            teacher_profile.username = clean_username
 
     elif current_user.role == "student":
         student_profile = db.query(Student).filter(Student.user_id == current_user.id).first()
@@ -284,7 +335,9 @@ def list_teachers(db: Session = Depends(get_db), current_user: User = Depends(ge
         t_resp.teaching_style = teacher_obj.teaching_style
         t_resp.linkedin_url = teacher_obj.linkedin_url
         t_resp.website_url = teacher_obj.website_url
+        t_resp.website_url = teacher_obj.website_url
         t_resp.full_name = teacher_obj.full_name or user_obj.full_name
+        t_resp.username = teacher_obj.username # Populate username
 
         t_resp.is_following = teacher_obj.id in followed_teacher_ids
         results.append(t_resp)

@@ -149,7 +149,10 @@ const Teachers = () => {
                                 <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg mb-4 overflow-hidden bg-gray-100 flex-shrink-0">
                                     <TeacherAvatar teacher={teacher} />
                                 </div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-1">{teacher.full_name}</h3>
+                                <h3 className="text-xl font-bold text-gray-900 mb-0.5">{teacher.full_name}</h3>
+                                {teacher.username && (
+                                    <p className="text-secondary-light text-sm font-medium mb-1">@{teacher.username}</p>
+                                )}
                                 <p className="text-primary font-medium text-sm mb-3 flex items-center gap-1">
                                     <GraduationCap className="w-4 h-4" />
                                     {teacher.subjects || "General Subjects"}
