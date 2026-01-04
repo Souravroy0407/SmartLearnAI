@@ -54,9 +54,6 @@ const QuizDetailsModal = ({ quiz, onClose }: QuizDetailsModalProps) => {
                     </div>
 
                     <div className="flex gap-2">
-                        <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold uppercase rounded-lg">
-                            {quiz.difficulty || "Medium"}
-                        </span>
                         <span className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-bold uppercase rounded-lg">
                             {quiz.topic || "General"}
                         </span>
@@ -372,14 +369,6 @@ const StudentQuizList = () => {
                                             {uiStatus === 'EXPIRED' ? 'Expired' : uiStatus === 'COMPLETED' ? 'Completed' : 'Active'}
                                         </div>
 
-                                        <span className={`
-                                        px-2.5 py-1 rounded-lg text-xs font-bold border
-                                        ${quiz.difficulty === 'Hard' ? 'bg-red-50 text-red-600 border-red-100' :
-                                                quiz.difficulty === 'Easy' ? 'bg-green-50 text-green-600 border-green-100' :
-                                                    'bg-orange-50 text-orange-600 border-orange-100'}
-                                    `}>
-                                            {quiz.difficulty || 'Medium'}
-                                        </span>
                                     </div>
 
                                     <h3 className="text-lg font-bold text-gray-800 mb-2 line-clamp-1 group-hover:text-primary transition-colors">{quiz.title}</h3>
@@ -413,6 +402,18 @@ const StudentQuizList = () => {
                                                 <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
                                             </div>
                                         </div>
+                                        {quiz.subject && (
+                                            <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg group/info relative cursor-help">
+                                                <BookOpen className="w-4 h-4 text-gray-400 group-hover/info:text-primary transition-colors" />
+                                                <span className="font-medium max-w-[120px] truncate">{quiz.subject}</span>
+
+                                                {/* Quick Info Tooltip */}
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-xl opacity-0 group-hover/info:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                                    Subject: {quiz.subject}
+                                                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="grid grid-cols-[auto_1fr] gap-3 pt-4 border-t border-gray-50">
@@ -461,10 +462,12 @@ const StudentQuizList = () => {
                 </div>
             </div>
 
-            {selectedQuiz && (
-                <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
-            )}
-        </div>
+            {
+                selectedQuiz && (
+                    <QuizDetailsModal quiz={selectedQuiz} onClose={() => setSelectedQuiz(null)} />
+                )
+            }
+        </div >
     );
 };
 

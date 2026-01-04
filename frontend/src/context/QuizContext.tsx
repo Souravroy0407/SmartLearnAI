@@ -14,8 +14,9 @@ export interface Quiz {
     attempted_count?: number;
     created_at: string;
     deadline?: string;
-    difficulty: string;
-    topic: string;
+    difficulty?: string; // Optional (hidden from student)
+    subject?: string; // Added subject
+    topic?: string;
     is_expired: boolean;
 }
 

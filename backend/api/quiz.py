@@ -29,11 +29,12 @@ class QuestionCreate(BaseModel):
 
 class QuizCreate(BaseModel):
     title: str
-    description: str
+    description: Optional[str] = None
     duration_minutes: int
     deadline: Optional[str] = None
-    difficulty: str
-    topic: str
+    difficulty: Optional[str] = None # Optional, only for AI prompt
+    subject: str 
+    topic: Optional[str] = None # Optional Context
     questions: List[QuestionCreate]
 
 from datetime import datetime, timezone
@@ -48,6 +49,7 @@ class QuizResponse(BaseModel):
     created_at: Optional[datetime] = None
     deadline: Optional[datetime] = None
     difficulty: Optional[str] = "Medium"
+    subject: Optional[str] = None # Added subject
     topic: Optional[str] = "General"
     questions_count: int
     status: Optional[str] = "active"
@@ -150,6 +152,7 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "created_at": q.created_at,
             "deadline": deadline_response,
             "difficulty": q.difficulty,
+            "subject": q.subject,
             "topic": q.topic,
             "questions_count": counts_map.get(q.id, 0),
             "status": status,
@@ -439,12 +442,25 @@ def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(
 
         raise HTTPException(status_code=500, detail=f"Failed to generate quiz: {str(e)}")
 
+# Assuming QuizCreate and QuizResponse are defined elsewhere in the file or imported.
+# If they were meant to be inserted here, the instruction was ambiguous.
+# I will proceed with the assumption that the user wants to modify the `create_quiz` function
+# and that `QuizCreate` and `QuizResponse` are defined elsewhere.
+
 @router.post("/")
 def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Use authenticated user ID
     if not current_user.teacher_profile:
          raise HTTPException(status_code=400, detail="Teacher profile not found")
     teacher_id = current_user.teacher_profile.id
+
+    # Validate Subject against Teacher Profile Subjects
+    teacher_subjects = [s.strip() for s in (current_user.teacher_profile.subjects or "").split(",") if s.strip()]
+    
+    if not teacher_subjects:
+        raise HTTPException(status_code=400, detail="Please add subjects to your profile before creating a quiz.")
+        
+    if quiz_data.subject not in teacher_subjects:
+        raise HTTPException(status_code=400, detail=f"Invalid subject '{quiz_data.subject}'. Please select from your profile subjects.")
     
     # Parse deadline if string
     deadline_dt = None
@@ -457,12 +473,6 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
             
             # Normalize to UTC
             if dt.tzinfo is None:
-                # If naive, assume it's already UTC (as frontend should send UTC)
-                # OR assume local server time? 
-                # User mandate: "Treat UTC as the single source of truth... Convert incoming to UTC"
-                # If frontend sends "2026-01-02T18:29:00Z", fromisoformat handles tzinfo.
-                # If frontend sends naive "2026-01-02T18:29:00", we should assume UTC or error out. 
-                # Let's enforce UTC.
                 dt = dt.replace(tzinfo=timezone.utc)
             else:
                 dt = dt.astimezone(timezone.utc)
@@ -479,7 +489,8 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
         created_at=datetime.now(timezone.utc), # Explicit UTC
         deadline=deadline_dt,      # Use datetime object
         difficulty=quiz_data.difficulty,
-        topic=quiz_data.topic
+        subject=quiz_data.subject, # Save Subject
+        topic=quiz_data.topic      # Save Topic (Free Text)
     )
     db.add(new_quiz)
     db.commit()

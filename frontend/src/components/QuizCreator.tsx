@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, CheckCircle2, Circle, Clock, Sparkles, Wand2, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, CheckCircle2, Circle, Clock, Sparkles, Wand2, Loader2, AlertTriangle } from 'lucide-react';
 import axios from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 interface Question {
     text: string;
@@ -13,7 +14,9 @@ interface QuizCreatorProps {
 }
 
 const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
+    const { user } = useAuth();
     const [title, setTitle] = useState('');
+    const [subject, setSubject] = useState(''); // Added subject state for manual mode
     const [description, setDescription] = useState('');
     const [topic, setTopic] = useState('');
     const [difficulty, setDifficulty] = useState('Medium');
@@ -104,7 +107,8 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
             setGenerationMode('manual');
 
             // Sync AI selections to main state
-            setTopic(aiTopic);
+            setSubject(aiTopic); // aiTopic is the dropdown selection (Subject)
+            setTopic(aiSubject); // aiSubject is the free text (Topic/Context)
             setDifficulty(aiDifficulty);
 
             // Set Title/Description from AI
@@ -128,10 +132,12 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
             return;
         }
 
-        if (!topic.trim()) {
-            setError('Please specify a topic.');
+        if (!subject.trim()) {
+            setError('Please select a subject from your profile.');
             return;
         }
+
+        // Topic and Description are now optional
 
         if (parseInt(duration) < 1) {
             setError('Duration must be at least 1 minute.');
@@ -165,9 +171,10 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
         try {
             await axios.post('/api/quiz/', {
                 title,
-                description,
-                topic,
-                difficulty,
+                description, // Optional
+                subject,
+                topic, // Optional
+                difficulty: null, // No difficulty for manual quizzes
                 duration_minutes: parseInt(duration),
                 deadline: utcDeadline,
                 questions
@@ -252,22 +259,42 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
 
                             <div className="space-y-5 bg-white p-8 rounded-3xl shadow-sm border border-purple-100">
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">Subject</label>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Subject (from Profile)</label>
+                                    {user?.subjects ? (
+                                        <div className="relative">
+                                            <select
+                                                value={aiTopic}
+                                                onChange={(e) => setAiTopic(e.target.value)}
+                                                className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 transition-all outline-none text-gray-800 appearance-none font-medium cursor-pointer"
+                                            >
+                                                <option value="" disabled>Select subject</option>
+                                                {user.subjects.split(',').map(s => s.trim()).filter(Boolean).map((subject, idx) => (
+                                                    <option key={idx} value={subject}>{subject}</option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-xl flex items-start gap-3">
+                                            <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-sm font-bold text-yellow-800">No subjects found</p>
+                                                <p className="text-xs text-yellow-700 mt-1">
+                                                    Please add subjects to your profile settings to use the AI generator.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Topic / Context</label>
                                     <input
                                         type="text"
                                         value={aiSubject}
                                         onChange={(e) => setAiSubject(e.target.value)}
-                                        placeholder="e.g., Physics"
-                                        className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">Topic</label>
-                                    <input
-                                        type="text"
-                                        value={aiTopic}
-                                        onChange={(e) => setAiTopic(e.target.value)}
-                                        placeholder="e.g., Quantum Mechanics"
+                                        placeholder="e.g., Introduction to Arrays, OSI Model"
                                         className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
                                     />
                                 </div>
@@ -380,33 +407,48 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">Topic</label>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Subject (from Profile)</label>
+                                        {user?.subjects ? (
+                                            <div className="relative">
+                                                <select
+                                                    value={subject}
+                                                    onChange={(e) => setSubject(e.target.value)}
+                                                    className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 appearance-none font-medium cursor-pointer"
+                                                >
+                                                    <option value="" disabled>Select subject</option>
+                                                    {user.subjects.split(',').map(s => s.trim()).filter(Boolean).map((sub, idx) => (
+                                                        <option key={idx} value={sub}>{sub}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-xl flex items-start gap-3">
+                                                <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="text-sm font-bold text-yellow-800">No subjects found</p>
+                                                    <p className="text-xs text-yellow-700 mt-1">
+                                                        Please add subjects to your profile settings to create a quiz.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Topic / Context</label>
                                         <input
                                             type="text"
                                             value={topic}
                                             onChange={(e) => setTopic(e.target.value)}
                                             className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
-                                            placeholder="e.g., General, Science, History"
+                                            placeholder="e.g., Introduction, Advanced Concepts"
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">Difficulty</label>
-                                        <div className="relative">
-                                            <select
-                                                value={difficulty}
-                                                onChange={(e) => setDifficulty(e.target.value)}
-                                                className="w-full px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-100 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none text-gray-800 appearance-none font-medium cursor-pointer"
-                                            >
-                                                <option value="Easy">Easy</option>
-                                                <option value="Medium">Medium</option>
-                                                <option value="Hard">Hard</option>
-                                            </select>
-                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    {/* Difficulty removed for Manual, used only for AI */}
                                 </div>
                             </div>
 

@@ -92,6 +92,7 @@ class Quiz(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     deadline = Column(DateTime)
     difficulty = Column(String(50))
+    subject = Column(String(100)) # Added subject
     topic = Column(String(100))
 
     teacher = relationship("Teacher", back_populates="quizzes")
