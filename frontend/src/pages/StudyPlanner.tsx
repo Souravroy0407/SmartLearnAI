@@ -1075,17 +1075,17 @@ const StudyPlanner = () => {
 
                                 <button
                                     onClick={() => {
-                                        const selectedIndex = calendarDays.findIndex(d =>
+                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
                                         );
                                         if (selectedIndex > 0) {
-                                            setSelectedDate(calendarDays[selectedIndex - 1].fullDate);
+                                            setSelectedDate(visibleCalendarDays[selectedIndex - 1].fullDate);
                                         }
                                     }}
-                                    disabled={calendarDays.length === 0 ||
-                                        calendarDays.findIndex(d =>
+                                    disabled={visibleCalendarDays.length === 0 ||
+                                        visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
@@ -1096,21 +1096,21 @@ const StudyPlanner = () => {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        const selectedIndex = calendarDays.findIndex(d =>
+                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
                                         );
-                                        if (selectedIndex < calendarDays.length - 1 && selectedIndex !== -1) {
-                                            setSelectedDate(calendarDays[selectedIndex + 1].fullDate);
+                                        if (selectedIndex < visibleCalendarDays.length - 1 && selectedIndex !== -1) {
+                                            setSelectedDate(visibleCalendarDays[selectedIndex + 1].fullDate);
                                         }
                                     }}
-                                    disabled={calendarDays.length === 0 ||
-                                        calendarDays.findIndex(d =>
+                                    disabled={visibleCalendarDays.length === 0 ||
+                                        visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        ) >= calendarDays.length - 1}
+                                        ) >= visibleCalendarDays.length - 1}
                                     className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <ChevronRight className="w-5 h-5 text-secondary" />
