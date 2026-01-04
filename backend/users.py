@@ -59,6 +59,7 @@ class TeacherResponse(UserResponse):
     website_url: Optional[str] = None
     
     is_following: bool = False
+    teacher_id: Optional[int] = None # Explicit Teacher Profile ID
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -145,6 +146,7 @@ def read_user_me(current_user: User = Depends(get_current_user), db: Session = D
             response_data.website_url = teacher_profile.website_url
             response_data.full_name = teacher_profile.full_name or current_user.full_name
             response_data.username = teacher_profile.username # Populate username
+            response_data.teacher_id = teacher_profile.id # Populate teacher_id
             
             return response_data
             
@@ -338,6 +340,7 @@ def list_teachers(db: Session = Depends(get_db), current_user: User = Depends(ge
         t_resp.website_url = teacher_obj.website_url
         t_resp.full_name = teacher_obj.full_name or user_obj.full_name
         t_resp.username = teacher_obj.username # Populate username
+        t_resp.teacher_id = teacher_obj.id # Populate teacher_id (profile id) for quiz filtering
 
         t_resp.is_following = teacher_obj.id in followed_teacher_ids
         results.append(t_resp)

@@ -56,7 +56,10 @@ class QuizResponse(BaseModel):
     score: Optional[int] = None
     attempted_count: Optional[int] = None
     warnings_count: Optional[int] = 0
+    attempted_count: Optional[int] = None
+    warnings_count: Optional[int] = 0
     is_expired: bool = False
+    teacher_id: int # Added teacher_id
 
 class SubmissionAnswer(BaseModel):
     question_id: int
@@ -158,7 +161,10 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "status": status,
             "score": score,
             "attempted_count": attempted_count,
-            "is_expired": is_expired
+            "score": score,
+            "attempted_count": attempted_count,
+            "is_expired": is_expired,
+            "teacher_id": q.teacher_id
         })
     return results
 

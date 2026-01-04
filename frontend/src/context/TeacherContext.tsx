@@ -13,6 +13,7 @@ export interface Teacher {
     bio?: string;
     price_label?: string;
     is_following: boolean;
+    teacher_id?: number; // Added Profile ID for quiz matching
 }
 
 interface TeacherContextType {
