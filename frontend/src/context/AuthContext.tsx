@@ -6,6 +6,7 @@ interface User {
     email: string;
     role: 'student' | 'teacher' | 'admin';
     full_name: string;
+    username?: string; // Added username (optional as it might not be relevant for all roles initially or during transition)
     avatar_url?: string;
 
     // Teacher Profile Fields

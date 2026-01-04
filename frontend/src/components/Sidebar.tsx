@@ -27,7 +27,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         { icon: MessageSquare, label: 'Doubt Solver', path: '/dashboard/doubt-solver' },
         { icon: Users, label: 'Teachers', path: '/dashboard/teachers' },
         // { icon: FileCheck, label: 'Exam Checker', path: '/dashboard/exam-checker' }, // Optionally keep for student upload
-        { icon: BarChart3, label: 'Analytics', path: '/dashboard/analytics' },
+        // { icon: BarChart3, label: 'Analytics', path: '/dashboard/analytics' },
     ];
 
     // Filter items if needed, or just show all for student view

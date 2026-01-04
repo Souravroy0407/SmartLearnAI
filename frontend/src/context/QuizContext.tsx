@@ -14,14 +14,17 @@ export interface Quiz {
     attempted_count?: number;
     created_at: string;
     deadline?: string;
-    difficulty: string;
-    topic: string;
+    difficulty?: string; // Optional (hidden from student)
+    subject?: string; // Added subject
+    topic?: string;
     is_expired: boolean;
+    teacher_id: number;
 }
 
 interface QuizContextType {
     quizzes: Quiz[];
     loading: boolean;
+    hasFetched: boolean;
     fetchQuizzes: (force?: boolean) => Promise<void>;
     updateQuizState: (updatedQuiz: Quiz) => void;
     removeQuiz: (id: number) => void;
@@ -77,7 +80,7 @@ export const QuizProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     return (
-        <QuizContext.Provider value={{ quizzes, loading, fetchQuizzes, updateQuizState, removeQuiz }}>
+        <QuizContext.Provider value={{ quizzes, loading, hasFetched, fetchQuizzes, updateQuizState, removeQuiz }}>
             {children}
         </QuizContext.Provider>
     );

@@ -96,6 +96,12 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    if db_user.status == "inactive":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been deactivated. Please contact the administrator.",
+        )
+    
     # Include role, full_name, and avatar_url in token
     access_token = create_access_token(data={"sub": db_user.email, "role": db_user.role, "full_name": db_user.full_name, "avatar_url": db_user.avatar_url})
     return {"access_token": access_token, "token_type": "bearer"}

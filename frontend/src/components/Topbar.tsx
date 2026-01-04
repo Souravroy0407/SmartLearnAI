@@ -16,6 +16,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
 
     // Edit Form State
     const [editName, setEditName] = useState('');
+    const [editUsername, setEditUsername] = useState(''); // Added username state
     const [editAvatarUrl, setEditAvatarUrl] = useState('');
 
     // Teacher Profile State
@@ -44,6 +45,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
         if (user) {
             // Always sync state with user prop when it changes or modal opens
             setEditName(user.full_name || '');
+            setEditUsername(user.username || ''); // Sync username
             setEditAvatarUrl(user.avatar_url || '');
 
             // Safety check for teacher fields
@@ -157,6 +159,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
             };
 
             if (user?.role === 'teacher') {
+                payload.username = editUsername; // Add username to payload
                 payload.bio = editBio;
                 payload.subjects = editSubjects;
                 payload.experience = editExperience;
@@ -220,6 +223,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                         >
                             <div className="text-right hidden sm:block">
                                 <p className="text-sm font-semibold text-secondary-dark">{user?.full_name || 'User'}</p>
+                                {user?.username && <p className="text-xs text-secondary-dark font-medium">@{user.username}</p>}
                                 <p className="text-xs text-secondary capitalize">{user?.role || 'Guest'}</p>
                             </div>
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
@@ -313,16 +317,32 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                         />
                                     </div>
                                     {user?.role === 'teacher' && (
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium text-secondary-dark">Professional Title</label>
-                                            <input
-                                                type="text"
-                                                value={editTitle}
-                                                onChange={(e) => setEditTitle(e.target.value)}
-                                                className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                                placeholder="e.g. Senior Math Educator"
-                                            />
-                                        </div>
+                                        <>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Username</label>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">@</span>
+                                                    <input
+                                                        type="text"
+                                                        value={editUsername}
+                                                        onChange={(e) => setEditUsername(e.target.value)}
+                                                        className="w-full pl-8 pr-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                        placeholder="username"
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-secondary">This will be visible to students</p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-secondary-dark">Professional Title</label>
+                                                <input
+                                                    type="text"
+                                                    value={editTitle}
+                                                    onChange={(e) => setEditTitle(e.target.value)}
+                                                    className="w-full px-4 py-2 rounded-lg border border-secondary-light/20 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                    placeholder="e.g. Senior Math Educator"
+                                                />
+                                            </div>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -444,78 +464,82 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div >
             )}
 
             {/* Image Cropper Modal */}
-            {isCropModalOpen && imageSrc && (
-                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col h-[500px]">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                            <h3 className="font-bold text-lg">Crop Image</h3>
-                            <button onClick={() => { setIsCropModalOpen(false); setImageSrc(null); }} className="p-1 hover:bg-gray-100 rounded-full">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="relative flex-1 bg-black">
-                            <Cropper
-                                image={imageSrc}
-                                crop={crop}
-                                zoom={zoom}
-                                aspect={1}
-                                onCropChange={setCrop}
-                                onCropComplete={handleCropComplete}
-                                onZoomChange={setZoom}
-                                cropShape="round"
-                                showGrid={false}
-                            />
-                        </div>
-                        <div className="p-4 bg-white space-y-4">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium">Zoom</span>
-                                <input
-                                    type="range"
-                                    value={zoom}
-                                    min={1}
-                                    max={3}
-                                    step={0.1}
-                                    aria-labelledby="Zoom"
-                                    onChange={(e) => setZoom(Number(e.target.value))}
-                                    className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            {
+                isCropModalOpen && imageSrc && (
+                    <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col h-[500px]">
+                            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                                <h3 className="font-bold text-lg">Crop Image</h3>
+                                <button onClick={() => { setIsCropModalOpen(false); setImageSrc(null); }} className="p-1 hover:bg-gray-100 rounded-full">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="relative flex-1 bg-black">
+                                <Cropper
+                                    image={imageSrc}
+                                    crop={crop}
+                                    zoom={zoom}
+                                    aspect={1}
+                                    onCropChange={setCrop}
+                                    onCropComplete={handleCropComplete}
+                                    onZoomChange={setZoom}
+                                    cropShape="round"
+                                    showGrid={false}
                                 />
                             </div>
-                            <div className="flex justify-end gap-3">
-                                <button
-                                    onClick={() => { setIsCropModalOpen(false); setImageSrc(null); }}
-                                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleUploadCroppedImage}
-                                    disabled={isLoading}
-                                    className="px-6 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark disabled:opacity-50"
-                                >
-                                    {isLoading ? 'Uploading...' : 'Done'}
-                                </button>
+                            <div className="p-4 bg-white space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium">Zoom</span>
+                                    <input
+                                        type="range"
+                                        value={zoom}
+                                        min={1}
+                                        max={3}
+                                        step={0.1}
+                                        aria-labelledby="Zoom"
+                                        onChange={(e) => setZoom(Number(e.target.value))}
+                                        className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        onClick={() => { setIsCropModalOpen(false); setImageSrc(null); }}
+                                        className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleUploadCroppedImage}
+                                        disabled={isLoading}
+                                        className="px-6 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark disabled:opacity-50"
+                                    >
+                                        {isLoading ? 'Uploading...' : 'Done'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
             {/* Toast Notification */}
-            {toast && (
-                <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-white border-l-4 border-green-500 text-gray-800' : 'bg-white border-l-4 border-red-500 text-gray-800'
-                    }`}>
-                    <div className={`p-1 rounded-full ${toast.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            {
+                toast && (
+                    <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-white border-l-4 border-green-500 text-gray-800' : 'bg-white border-l-4 border-red-500 text-gray-800'
+                        }`}>
+                        <div className={`p-1 rounded-full ${toast.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                            {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                        </div>
+                        <span className="font-medium text-sm">{toast.message}</span>
+                        <button onClick={() => setToast(null)} className="ml-2 text-gray-400 hover:text-gray-600">
+                            <X className="w-4 h-4" />
+                        </button>
                     </div>
-                    <span className="font-medium text-sm">{toast.message}</span>
-                    <button onClick={() => setToast(null)} className="ml-2 text-gray-400 hover:text-gray-600">
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
-            )}
+                )
+            }
         </>
     );
 };

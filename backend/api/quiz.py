@@ -29,11 +29,12 @@ class QuestionCreate(BaseModel):
 
 class QuizCreate(BaseModel):
     title: str
-    description: str
+    description: Optional[str] = None
     duration_minutes: int
     deadline: Optional[str] = None
-    difficulty: str
-    topic: str
+    difficulty: Optional[str] = None # Optional, only for AI prompt
+    subject: str 
+    topic: Optional[str] = None # Optional Context
     questions: List[QuestionCreate]
 
 from datetime import datetime, timezone
@@ -48,13 +49,17 @@ class QuizResponse(BaseModel):
     created_at: Optional[datetime] = None
     deadline: Optional[datetime] = None
     difficulty: Optional[str] = "Medium"
+    subject: Optional[str] = None # Added subject
     topic: Optional[str] = "General"
     questions_count: int
     status: Optional[str] = "active"
     score: Optional[int] = None
     attempted_count: Optional[int] = None
     warnings_count: Optional[int] = 0
+    attempted_count: Optional[int] = None
+    warnings_count: Optional[int] = 0
     is_expired: bool = False
+    teacher_id: int # Added teacher_id
 
 class SubmissionAnswer(BaseModel):
     question_id: int
@@ -119,16 +124,20 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
         
         # Calculate expiry
         if q.deadline:
-            # Ensure deadline is aware for comparison or make now naive if deadline is naive
-            # Safest approach: treat deadline as UTC
+            # Ensure deadline is aware for comparison
+            # Treat naive DB value as UTC (Strict Source of Truth)
             deadline_val = q.deadline
             if deadline_val.tzinfo is None:
-                # Handle naive datetime (assume system local time)
-                # Convert to UTC-aware
-                deadline_val = deadline_val.astimezone(timezone.utc)
+                deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+            else:
+                 # Already aware, convert to UTC to be safe
+                 deadline_val = deadline_val.astimezone(timezone.utc)
             
             if now > deadline_val:
                 is_expired = True
+
+        # Ensure the response uses the aware UTC datetime which serializes to ISO 8601 with Z
+        deadline_response = deadline_val if q.deadline else None
 
         attempt = attempts_map.get(q.id)
         if attempt:
@@ -144,14 +153,18 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
             "description": q.description,
             "duration_minutes": q.duration_minutes,
             "created_at": q.created_at,
-            "deadline": q.deadline,
+            "deadline": deadline_response,
             "difficulty": q.difficulty,
+            "subject": q.subject,
             "topic": q.topic,
             "questions_count": counts_map.get(q.id, 0),
             "status": status,
             "score": score,
             "attempted_count": attempted_count,
-            "is_expired": is_expired
+            "score": score,
+            "attempted_count": attempted_count,
+            "is_expired": is_expired,
+            "teacher_id": q.teacher_id
         })
     return results
 
@@ -211,6 +224,8 @@ def submit_quiz(quiz_id: int, submission: QuizSubmission, db: Session = Depends(
         # Strict expiry check with UTC awareness
         deadline_val = quiz.deadline
         if deadline_val.tzinfo is None:
+             deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
              deadline_val = deadline_val.astimezone(timezone.utc)
         
         now = datetime.now(timezone.utc)
@@ -308,10 +323,14 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
             QuizAttempt.status == "completed" 
         ).order_by(QuizAttempt.timestamp.desc()).all()
     
-    results = []
+    # Calculate total questions once
+    total_questions_count = db.query(Question).filter(Question.quiz_id == quiz_id).count()
+
+    student_results = []
+    
     for attempt, user, student in attempts:
         # Double check for timestamp validity
-        if not attempt.timestamp or attempt.timestamp == "":
+        if not attempt.timestamp:
             continue
 
         # Validate and convert timestamps
@@ -348,21 +367,34 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
             StudentAnswer.selected_option_id.isnot(None)
         ).distinct().count()
         
-        results.append({
+        student_results.append({
             "id": attempt.id,
             "student_name": student_name,
             "student_email": user.email,
             "score": attempt.score,
             "attempted_count": attempted_count,
-            "total_questions": len(quiz.questions) if quiz.questions else 0, # Add total questions info if needed
+            "total_questions": total_questions_count,
             "submitted_at": attempt.timestamp,
+            "date": attempt.timestamp, # Added for frontend compatibility
             "warnings_count": attempt.warnings_count,
             "tab_switch_count": attempt.tab_switch_count,
             "time_taken": time_taken_str, 
             "submission_type": attempt.submission_type or "manual"
         })
+    
+    # Calculate Aggregates
+    total_attempts = len(student_results)
+    average_score = 0
+    if total_attempts > 0:
+        total_score = sum(r["score"] for r in student_results)
+        average_score = round(total_score / total_attempts)
         
-    return results
+    return {
+        "title": quiz.title,
+        "total_attempts": total_attempts,
+        "average_score": average_score,
+        "student_results": student_results
+    }
 # --- AI Generation ---
 
 @router.post("/generate-ai")
@@ -416,31 +448,55 @@ def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(
 
         raise HTTPException(status_code=500, detail=f"Failed to generate quiz: {str(e)}")
 
+# Assuming QuizCreate and QuizResponse are defined elsewhere in the file or imported.
+# If they were meant to be inserted here, the instruction was ambiguous.
+# I will proceed with the assumption that the user wants to modify the `create_quiz` function
+# and that `QuizCreate` and `QuizResponse` are defined elsewhere.
+
 @router.post("/")
 def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Use authenticated user ID
     if not current_user.teacher_profile:
          raise HTTPException(status_code=400, detail="Teacher profile not found")
     teacher_id = current_user.teacher_profile.id
+
+    # Validate Subject against Teacher Profile Subjects
+    teacher_subjects = [s.strip() for s in (current_user.teacher_profile.subjects or "").split(",") if s.strip()]
+    
+    if not teacher_subjects:
+        raise HTTPException(status_code=400, detail="Please add subjects to your profile before creating a quiz.")
+        
+    if quiz_data.subject not in teacher_subjects:
+        raise HTTPException(status_code=400, detail=f"Invalid subject '{quiz_data.subject}'. Please select from your profile subjects.")
     
     # Parse deadline if string
     deadline_dt = None
     if quiz_data.deadline:
         try:
-            deadline_dt = datetime.fromisoformat(quiz_data.deadline.replace('Z', '+00:00'))
+            # Assume strict ISO 8601 from frontend
+            # If handling potential "Z" suffix manually
+            deadline_str = quiz_data.deadline.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(deadline_str)
+            
+            # Normalize to UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+                
+            deadline_dt = dt
         except ValueError:
-            # Handle MM/DD/YYYY etc if needed, or just let it fail/be specific
-            pass
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected ISO 8601 UTC.")
 
     new_quiz = Quiz(
         title=quiz_data.title,
         description=quiz_data.description,
         duration_minutes=quiz_data.duration_minutes,
         teacher_id=teacher_id,
-        created_at=datetime.utcnow(), # Use datetime object
+        created_at=datetime.now(timezone.utc), # Explicit UTC
         deadline=deadline_dt,      # Use datetime object
         difficulty=quiz_data.difficulty,
-        topic=quiz_data.topic
+        subject=quiz_data.subject, # Save Subject
+        topic=quiz_data.topic      # Save Topic (Free Text)
     )
     db.add(new_quiz)
     db.commit()
@@ -493,8 +549,14 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         })
     
     # Check deadline
-    if quiz.deadline:
-        if datetime.utcnow() > quiz.deadline:
+    deadline_val = quiz.deadline
+    if deadline_val:
+        if deadline_val.tzinfo is None:
+             deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
+             deadline_val = deadline_val.astimezone(timezone.utc)
+
+        if datetime.now(timezone.utc) > deadline_val:
              raise HTTPException(status_code=400, detail="Quiz has expired")
 
     return {
@@ -502,7 +564,7 @@ def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
         "title": quiz.title,
         "description": quiz.description,
         "duration_minutes": quiz.duration_minutes,
-        "deadline": quiz.deadline,
+        "deadline": deadline_val, # Returns aware UTC datetime
         "questions": questions_data
     }
 
@@ -560,7 +622,13 @@ def get_quiz_status(quiz_id: int, db: Session = Depends(get_db), current_user: U
     # Check for expiration
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if quiz and quiz.deadline:
-        if datetime.utcnow() > quiz.deadline:
+        deadline_val = quiz.deadline
+        if deadline_val.tzinfo is None:
+            deadline_val = deadline_val.replace(tzinfo=timezone.utc)
+        else:
+            deadline_val = deadline_val.astimezone(timezone.utc)
+
+        if datetime.now(timezone.utc) > deadline_val:
             return {"status": "expired"}
             
     return {"status": "active"}

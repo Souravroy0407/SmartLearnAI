@@ -61,11 +61,11 @@ def create_manual_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Create a new manual task for the authenticated student.
-    """
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="Student profile not found. Please log in as a student.")
+
     db_task = CreateTaskManual(
-        student_id=current_user.id,
+        student_id=current_user.student_profile.id,
         title=task.title,
         task_date=task.task_date,
         colourtag=task.colourtag,
@@ -89,9 +89,12 @@ def delete_manual_task(
     Delete a manual task.
     """
     try:
+        if not current_user.student_profile:
+             raise HTTPException(status_code=403, detail="Not authorized")
+
         deleted = db.query(CreateTaskManual).filter(
             CreateTaskManual.task_id == task_id,
-            CreateTaskManual.student_id == current_user.id
+            CreateTaskManual.student_id == current_user.student_profile.id
         ).delete(synchronize_session=False)
         
         if deleted == 0:
@@ -117,9 +120,12 @@ def delete_ai_task(
     Delete an AI-generated task.
     """
     try:
+        if not current_user.student_profile:
+             raise HTTPException(status_code=403, detail="Not authorized")
+
         deleted = db.query(CreateTaskAI).filter(
             CreateTaskAI.task_id == task_id,
-            CreateTaskAI.student_id == current_user.id
+            CreateTaskAI.student_id == current_user.student_profile.id
         ).delete(synchronize_session=False)
         
         if deleted == 0:
@@ -141,10 +147,11 @@ def create_goal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Removed student_profile check as per requirement
+    if not current_user.student_profile:
+        raise HTTPException(status_code=400, detail="Student profile not found")
         
     db_goal = StudyGoal(
-        student_id=current_user.id, # Using user_id directly
+        student_id=current_user.student_profile.id,
         title=goal.title,
         type=goal.type,
         date=goal.date,
@@ -160,10 +167,11 @@ def list_goals(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Removed student_profile check
+    if not current_user.student_profile:
+        return []
         
     goals = db.query(StudyGoal).filter(
-        StudyGoal.student_id == current_user.id
+        StudyGoal.student_id == current_user.student_profile.id
     ).all()
     
     return goals
@@ -174,11 +182,12 @@ def delete_goal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Removed student_profile check
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
         
     goal = db.query(StudyGoal).filter(
         StudyGoal.goal_id == goal_id,
-        StudyGoal.student_id == current_user.id
+        StudyGoal.student_id == current_user.student_profile.id
     ).first()
     
     if not goal:
@@ -201,9 +210,12 @@ def update_goal(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     goal = db.query(StudyGoal).filter(
         StudyGoal.goal_id == goal_id,
-        StudyGoal.student_id == current_user.id
+        StudyGoal.student_id == current_user.student_profile.id
     ).first()
     
     if not goal:
@@ -277,15 +289,18 @@ def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+        return []
+
     # Fetch AI Tasks
-    ai_query = db.query(CreateTaskAI).filter(CreateTaskAI.student_id == current_user.id)
+    ai_query = db.query(CreateTaskAI).filter(CreateTaskAI.student_id == current_user.student_profile.id)
     if date:
         ai_query = ai_query.filter(CreateTaskAI.task_date == date)
     ai_tasks = ai_query.all()
     
     # Fetch Manual Tasks (if table exists and is used)
     # The user mentioned merging if planner supports it. Assuming yes.
-    manual_query = db.query(CreateTaskManual).filter(CreateTaskManual.student_id == current_user.id)
+    manual_query = db.query(CreateTaskManual).filter(CreateTaskManual.student_id == current_user.student_profile.id)
     if date:
         manual_query = manual_query.filter(CreateTaskManual.task_date == date)
     manual_tasks = manual_query.all()
@@ -338,10 +353,13 @@ def complete_ai_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     # Verify task ownership via student_id directly
     task = db.query(CreateTaskAI).filter(
         CreateTaskAI.task_id == task_id,
-        CreateTaskAI.student_id == current_user.id
+        CreateTaskAI.student_id == current_user.student_profile.id
     ).first()
     
     if not task:
@@ -369,9 +387,12 @@ def update_ai_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     task = db.query(CreateTaskAI).filter(
         CreateTaskAI.task_id == task_id,
-        CreateTaskAI.student_id == current_user.id
+        CreateTaskAI.student_id == current_user.student_profile.id
     ).first()
 
     if not task:
@@ -400,9 +421,12 @@ def update_manual_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     manual_task = db.query(CreateTaskManual).filter(
         CreateTaskManual.task_id == task_id,
-        CreateTaskManual.student_id == current_user.id
+        CreateTaskManual.student_id == current_user.student_profile.id
     ).first()
 
     if not manual_task:
@@ -437,13 +461,16 @@ def update_task_any(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
     # Try AI first
-    ai_task = db.query(CreateTaskAI).filter(CreateTaskAI.task_id == task_id, CreateTaskAI.student_id == current_user.id).first()
+    ai_task = db.query(CreateTaskAI).filter(CreateTaskAI.task_id == task_id, CreateTaskAI.student_id == current_user.student_profile.id).first()
     if ai_task:
         return update_ai_task(task_id, update_data, db, current_user)
     
     # Try Manual
-    manual_task = db.query(CreateTaskManual).filter(CreateTaskManual.task_id == task_id, CreateTaskManual.student_id == current_user.id).first()
+    manual_task = db.query(CreateTaskManual).filter(CreateTaskManual.task_id == task_id, CreateTaskManual.student_id == current_user.student_profile.id).first()
     if manual_task:
         return update_manual_task(task_id, update_data, db, current_user)
         
@@ -468,10 +495,13 @@ def generate_study_plan(
     Dedicated endpoint for generating AI study plans.
     ⚠️ DO NOT MODIFY — Core AI Generation Route
     """
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized to generate study plans")
+
     # 0. Validate Goal ownership
     goal = db.query(StudyGoal).filter(
         StudyGoal.goal_id == request.goal_id,
-        StudyGoal.student_id == current_user.id
+        StudyGoal.student_id == current_user.student_profile.id
     ).first()
     
     if not goal:
@@ -488,7 +518,7 @@ def generate_study_plan(
              # Manual tasks (CreateTaskManual) are NEVER touched by this process
              deleted_count = db.query(CreateTaskAI).filter(
                  CreateTaskAI.goal_id == request.goal_id,
-                 CreateTaskAI.student_id == current_user.id
+                 CreateTaskAI.student_id == current_user.student_profile.id
              ).delete(synchronize_session=False)
              # print(f"Deleted {deleted_count} AI tasks. Manual tasks preserved.")
         except Exception as e:
@@ -512,7 +542,7 @@ def generate_study_plan(
     if mode == "extend_only":
         max_date = db.query(func.max(CreateTaskAI.task_date)).filter(
             CreateTaskAI.goal_id == request.goal_id,
-            CreateTaskAI.student_id == current_user.id
+            CreateTaskAI.student_id == current_user.student_profile.id
         ).scalar()
         
         if max_date:
@@ -560,7 +590,7 @@ def generate_study_plan(
                 
             existing_tasks_dates = db.query(CreateTaskAI.task_date).filter(
                 CreateTaskAI.goal_id == request.goal_id,
-                CreateTaskAI.student_id == current_user.id
+                CreateTaskAI.student_id == current_user.student_profile.id
             ).all()
             existing_dates = {t[0] for t in existing_tasks_dates}
         

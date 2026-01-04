@@ -6,12 +6,14 @@ import { useAuth } from './AuthContext';
 export interface Teacher {
     id: number;
     full_name: string;
+    username: string; // Added username
     avatar_url?: string;
     subjects?: string;
     experience?: string;
     bio?: string;
     price_label?: string;
     is_following: boolean;
+    teacher_id?: number; // Added Profile ID for quiz matching
 }
 
 interface TeacherContextType {
