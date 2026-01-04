@@ -1200,8 +1200,7 @@ const StudyPlanner = () => {
                                     // We fallback to 'bg-primary' to prevent crashes.
                                     const rawColor = (task as any).colourtag || task.color || 'bg-primary';
                                     const taskColor = typeof rawColor === 'string' ? rawColor : 'bg-primary';
-                                    const safeColorBase = taskColor.replace('bg-', 'bg-'); // Ensure no crash on replace
-                                    const safeColorText = taskColor.replace('bg-', '');
+
 
                                     return (
                                         <motion.div
@@ -1220,9 +1219,7 @@ const StudyPlanner = () => {
 
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${safeColorBase}/10 text-${safeColorText}`}>
-                                                        {task.task_type}
-                                                    </span>
+                                                    {/* Category label removed */}
                                                     {task.status === 'completed' && (
                                                         <CheckCircle2 className="w-4 h-4 text-success" />
                                                     )}
@@ -1468,22 +1465,7 @@ const StudyPlanner = () => {
                                             </div>
 
                                             {/* Hover Mark Complete Button */}
-                                            {/* Hover Mark Complete Button (Toggle) */}
-                                            <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleGoalCompletion(item);
-                                                    }}
-                                                    disabled={isUpdatingGoalStatus}
-                                                    className={`p-2 rounded-lg transition-colors ${item.goal_status === 'completed'
-                                                        ? 'text-success bg-success/10'
-                                                        : 'text-secondary-light hover:text-primary hover:bg-primary/10'}`}
-                                                    title={item.goal_status === 'completed' ? "Mark as active" : "Mark as completed"}
-                                                >
-                                                    <CheckCircle2 className="w-5 h-5" />
-                                                </button>
-                                            </div>
+
 
                                             {/* Goal Menu */}
                                             <div className="absolute top-2 right-2 z-20">
@@ -1514,6 +1496,16 @@ const StudyPlanner = () => {
                                                             }`}
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
+                                                        <button
+                                                            onClick={() => {
+                                                                toggleGoalCompletion(item);
+                                                                setActiveGoalMenuId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <CheckCircle2 className={`w-4 h-4 ${item.goal_status === 'completed' ? 'text-success' : ''}`} />
+                                                            {item.goal_status === 'completed' ? 'Mark as Active' : 'Mark as Completed'}
+                                                        </button>
                                                         <button
                                                             onClick={() => {
                                                                 setGoalToEdit({ id: item.exam.id, title: item.exam.title });
