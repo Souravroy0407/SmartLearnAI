@@ -86,9 +86,6 @@ const StudentQuizList = () => {
         return 'TEACHERS';
     }, [selectedTeacherId, selectedSubject]);
 
-    // Cleanup: If teacherId is invalid, reset? (Optional, handled by empty states)
-    // Cleanup: If topic selected but no teacher, invalid state. (Handled by viewMode logic order)
-
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState<FilterType>('all');
@@ -146,14 +143,12 @@ const StudentQuizList = () => {
             : [];
 
         // 2. Filter quizzes for this teacher FIRST (using correct Profile ID)
-        // selectedTeacherId is UserID, but Quiz uses TeacherProfileID
         const targetTeacherProfileId = selectedTeacher.teacher_id;
         if (!targetTeacherProfileId) return [];
 
         const teacherQuizzes = quizzes.filter(q => q.teacher_id === targetTeacherProfileId);
 
         // 3. Map subjects to quiz counts with normalization
-        // Source of truth is PROFILE subjects
         const subjectCounts = profileSubjects.reduce((acc, rawSubject) => {
             const normalizedProfileSubject = rawSubject.toLowerCase();
 
@@ -178,7 +173,6 @@ const StudentQuizList = () => {
             if (!selectedTeacherId || !selectedSubject) return [];
 
             // Must use Teacher Profile ID from the teacher object
-            // selectedTeacherId is just the user ID (search param)
             const teacherProfileId = selectedTeacher?.teacher_id;
             const subjectKey = selectedSubject.trim().toLowerCase();
 

@@ -19,7 +19,7 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
     const [subject, setSubject] = useState(''); // Added subject state for manual mode
     const [description, setDescription] = useState('');
     const [topic, setTopic] = useState('');
-    const [difficulty, setDifficulty] = useState('Medium');
+    // difficulty removed for manual quizzes
     const [duration, setDuration] = useState('30');
     const [deadline, setDeadline] = useState('');
     const [questions, setQuestions] = useState<Question[]>([
@@ -109,7 +109,6 @@ const QuizCreator = ({ onClose, onSuccess }: QuizCreatorProps) => {
             // Sync AI selections to main state
             setSubject(aiTopic); // aiTopic is the dropdown selection (Subject)
             setTopic(aiSubject); // aiSubject is the free text (Topic/Context)
-            setDifficulty(aiDifficulty);
 
             // Set Title/Description from AI
             setTitle(aiTitle);
