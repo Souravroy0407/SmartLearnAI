@@ -42,6 +42,13 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
             return;
         }
 
+        // Prevent past dates
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (taskDate < todayStr) {
+            alert("Cannot create tasks in the past.");
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -60,7 +67,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                 title,
                 task_date: taskDate,
                 colourtag: color, // Map 'color' state to 'colourtag'
-                task_time: `${taskDate}T${startTime}:00`
+                task_time: `${taskDate}T${startTime}:00`,
+                duration_minutes: Number(duration)
             };
 
             console.log("POST about to be sent", payload);
@@ -108,6 +116,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                     <input
                         type="date"
                         required
+                        min={new Date().toISOString().split('T')[0]} // Restrict past dates
                         value={taskDate}
                         onChange={(e) => setTaskDate(e.target.value)}
                         className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -144,8 +153,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                         <input
                             type="number"
                             required
-                            min="15"
-                            step="15"
+                            min="1"
+                            step="1"
                             value={duration}
                             onChange={(e) => setDuration(Number(e.target.value))}
                             className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
