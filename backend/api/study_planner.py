@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from datetime import datetime, date as PyDate, timedelta
 import os
 
@@ -36,8 +36,13 @@ class CreateManualTaskRequest(BaseModel):
     task_date: PyDate
     colourtag: Optional[str] = None
     task_time: Optional[datetime] = None
-    # duration is not stored in DB as per manual task table
-    # status default is handled by DB/Logic
+    duration_minutes: int
+    
+    @validator('duration_minutes')
+    def validate_duration(cls, v):
+        if v <= 0:
+            raise ValueError('Duration must be positive')
+        return v
 
 class ManualTaskResponse(BaseModel):
     task_id: int
@@ -46,6 +51,7 @@ class ManualTaskResponse(BaseModel):
     task_date: PyDate
     colourtag: Optional[str]
     task_time: Optional[datetime]
+    duration_minutes: int
     status: str
     created_at: datetime
 
@@ -70,6 +76,7 @@ def create_manual_task(
         task_date=task.task_date,
         colourtag=task.colourtag,
         task_time=task.task_time,
+        duration_minutes=task.duration_minutes,
         status="active" # Default status
     )
     
@@ -370,7 +377,7 @@ def list_tasks(
             title=t.title,
             task_date=t.task_date,
             task_time=t.task_time, # Manual tasks have task_time too
-            duration_minutes=60, # Default if missing
+            duration_minutes=t.duration_minutes, # Use real stored duration
             sequence_no=0,
             task_status=t.status,
             is_manual=True,
@@ -477,9 +484,7 @@ def update_manual_task(
     if update_data.task_time:
         manual_task.task_time = update_data.task_time
     if update_data.duration_minutes is not None:
-         # Safely check or assume existence. Given models usually align.
-         if hasattr(manual_task, 'duration_minutes'):
-            manual_task.duration_minutes = update_data.duration_minutes
+         manual_task.duration_minutes = update_data.duration_minutes
         
     db.commit()
     db.refresh(manual_task)

@@ -1871,6 +1871,11 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
             return;
         }
 
+        if (Number(duration) <= 0) {
+            alert("Duration must be a positive number.");
+            return;
+        }
+
         // Construct new start_time ISO string (Local Time - No UTC conversion)
         // We want strict YYYY-MM-DDTHH:mm:ss as selected by user.
         const localISO = `${date}T${time}:00`;

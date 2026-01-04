@@ -37,8 +37,13 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
         e.preventDefault();
 
         // Validation
-        if (!title.trim() || !taskDate || !startTime) {
+        if (!title.trim() || !taskDate || !startTime || !duration) {
             alert("Please fill in all required fields.");
+            return;
+        }
+
+        if (Number(duration) <= 0) {
+            alert("Duration must be a positive number.");
             return;
         }
 
