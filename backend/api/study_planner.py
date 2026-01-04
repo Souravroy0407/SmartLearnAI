@@ -199,6 +199,42 @@ def delete_goal(
     return {"message": "Goal deleted successfully"}
 
 
+@router.delete("/goals/{goal_id}/tasks")
+def delete_goal_tasks(
+    goal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user.student_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+        
+    goal = db.query(StudyGoal).filter(
+        StudyGoal.goal_id == goal_id,
+        StudyGoal.student_id == current_user.student_profile.id
+    ).first()
+    
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    # If no tasks exist, we still return success.
+    try:
+        # Note: We only delete AI tasks generated for this goal.
+        # Manual tasks are generally not linked to a goal_id in the current schema (goal_id=0/null for manual mapping) on clean up
+        # If schema supported manual tasks having goal_id, we would delete them too.
+        deleted_count = db.query(CreateTaskAI).filter(
+            CreateTaskAI.goal_id == goal_id,
+            CreateTaskAI.student_id == current_user.student_profile.id
+        ).delete(synchronize_session=False)
+
+        db.commit()
+        return {"message": f"Successfully deleted {deleted_count} tasks", "deleted_count": deleted_count}
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error clearing tasks: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear tasks")
+
+
 class GoalUpdate(BaseModel):
     title: Optional[str] = None
     exam_date: Optional[Union[str, PyDate]] = None # Renamed from 'date' to 'exam_date' per requirement
