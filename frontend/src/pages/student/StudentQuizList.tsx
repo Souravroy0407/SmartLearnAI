@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, Filter, ChevronDown, Check, ChevronRight, User, ArrowLeft, BarChart2 } from 'lucide-react';
+import { FileText, Clock, Play, CheckCircle, Info, Calendar, X, Search, BookOpen, AlertTriangle, Filter, ChevronDown, Check, ChevronRight, User, ArrowLeft, BarChart2, RefreshCw } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuiz, type Quiz } from '../../context/QuizContext';
 import { useTeacher } from '../../context/TeacherContext';
@@ -90,6 +90,7 @@ const StudentQuizList = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState<FilterType>('all');
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const filterRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
 
@@ -111,6 +112,13 @@ const StudentQuizList = () => {
         fetchTeachers();
         fetchQuizzes();
     }, [fetchTeachers, fetchQuizzes]);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        // Refresh both to ensure drill-down counts are accurate (e.g. if a teacher added a new quiz)
+        await Promise.all([fetchTeachers(), fetchQuizzes(true)]);
+        setIsRefreshing(false);
+    };
 
 
 
@@ -462,6 +470,15 @@ const StudentQuizList = () => {
                         />
                     </div>
 
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing || quizzesLoading}
+                        className="p-3.5 rounded-2xl bg-white border border-gray-200 text-gray-500 hover:text-primary hover:border-primary hover:bg-primary/5 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                        title="Refresh quizzes"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing || quizzesLoading ? 'animate-spin' : ''}`} />
+                    </button>
+
                     {/* Filter Dropdown */}
                     <div className="relative ml-auto" ref={filterRef}>
                         <button
@@ -656,6 +673,17 @@ const StudentQuizList = () => {
                         {viewMode === 'QUIZZES' && `Viewing ${selectedSubject} quizzes by ${selectedTeacher?.full_name}.`}
                     </p>
                 </div>
+
+                {viewMode !== 'QUIZZES' && (
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing || quizzesLoading}
+                        className="p-3 rounded-2xl bg-white/50 border border-gray-200/50 text-gray-500 hover:text-primary hover:bg-white hover:border-primary/20 hover:shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none mb-1 backdrop-blur-sm"
+                        title="Refresh data"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing || quizzesLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                )}
             </div>
 
             {/* Breadcrumb Navigation */}
