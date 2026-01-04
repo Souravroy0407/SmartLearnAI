@@ -196,3 +196,15 @@ class CreateTaskManual(Base):
     task_time = Column(DateTime, nullable=True)
     status = Column(String(50), nullable=False, default='pending')
     created_at = Column(DateTime, default=datetime.utcnow)
+
+# ===================== OTP VERIFICATION =====================
+
+class OtpVerification(Base):
+    __tablename__ = "otp_verification"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, nullable=False)
+    otp = Column(String(4), nullable=False)
+    verified = Column(Integer, default=0)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

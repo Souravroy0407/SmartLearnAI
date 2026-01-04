@@ -24,6 +24,7 @@ app.include_router(admin.router)
 
 app.include_router(users.router)
 
+
 # Configure CORS to allow requests from the React frontend
 origins = [
     "http://localhost:5173",

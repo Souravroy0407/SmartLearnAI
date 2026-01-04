@@ -13,8 +13,56 @@ const SignupPage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // OTP State
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpVerified, setOtpVerified] = useState(false);
+    const [otpValue, setOtpValue] = useState('');
+    const [verifyingOtp, setVerifyingOtp] = useState(false);
+
+    const handleSendOtp = async () => {
+        if (!email) {
+            setError("Please enter your email first.");
+            return;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            await api.post('/api/auth/send-signup-otp', { email });
+            setOtpSent(true);
+            // Optional: Start timer here
+        } catch (err: any) {
+            setError(err.response?.data?.detail || "Failed to send OTP.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async () => {
+        if (!otpValue) {
+            setError("Please enter the OTP.");
+            return;
+        }
+        setVerifyingOtp(true);
+        setError(null);
+        try {
+            await api.post('/api/auth/verify-signup-otp', { email, otp: otpValue });
+            setOtpVerified(true);
+            setOtpSent(false); // Hide OTP input, show Verified badge
+        } catch (err: any) {
+            setError(err.response?.data?.detail || "Invalid OTP.");
+        } finally {
+            setVerifyingOtp(false);
+        }
+    };
+
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!otpVerified) {
+            setError("Please verify your email first.");
+            return;
+        }
+
         setLoading(true);
         setError(null);
 
@@ -166,12 +214,63 @@ const SignupPage = () => {
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-800 placeholder:text-slate-400 font-medium"
+                                    disabled={otpVerified || otpSent}
+                                    className={`w-full pl-12 pr-28 py-4 bg-slate-50/50 border ${otpVerified ? 'border-green-500/50 bg-green-50/30' : 'border-slate-200'} rounded-2xl focus:bg-white focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-800 placeholder:text-slate-400 font-medium disabled:opacity-70 disabled:cursor-not-allowed`}
                                     placeholder="name@example.com"
                                     required
                                 />
+                                {/* Verify / Verified Badge */}
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                    {otpVerified ? (
+                                        <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1">
+                                            <Sparkles className="w-3 h-3" /> Verified
+                                        </span>
+                                    ) : otpSent ? (
+                                        <span className="text-slate-400 text-xs font-medium mr-2">Sent</span>
+                                    ) : (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ? (
+                                        <button
+                                            type="button"
+                                            onClick={handleSendOtp}
+                                            disabled={loading}
+                                            className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                                        >
+                                            Verify
+                                        </button>
+                                    ) : null}
+                                </div>
                             </div>
                         </motion.div>
+
+                        {/* OTP Input Section */}
+                        {otpSent && !otpVerified && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                className="group"
+                            >
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">
+                                    Enter OTP
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={otpValue}
+                                        onChange={(e) => setOtpValue(e.target.value)}
+                                        className="flex-1 px-4 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:bg-white focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-800 placeholder:text-slate-400 font-medium text-center tracking-widest text-lg"
+                                        placeholder="0000"
+                                        maxLength={4}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleVerifyOtp}
+                                        disabled={verifyingOtp || !otpValue}
+                                        className="bg-indigo-600 text-white px-6 rounded-2xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                                    >
+                                        {verifyingOtp ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit"}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
 
                         <motion.div
                             initial={{ x: -10, opacity: 0 }}

@@ -6,7 +6,12 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from database import get_db
-from models import User, Student
+from models import User, Student, OtpVerification
+from utils.smtp import send_email, get_otp_email_template
+import random
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -32,6 +37,13 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class SendOtpRequest(BaseModel):
+    email: str
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -64,15 +76,86 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
+@router.post("/send-signup-otp")
+def send_signup_otp(request: SendOtpRequest, db: Session = Depends(get_db)):
+    email = request.email.strip().lower()
+    
+    # Check if user already exists
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Generate OTP
+    otp = str(random.randint(1000, 9999))
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    
+    # Update or Create OTP record
+    otp_record = db.query(OtpVerification).filter(OtpVerification.email == email).first()
+    if otp_record:
+        otp_record.otp = otp
+        otp_record.verified = 0
+        otp_record.expires_at = expires_at
+        otp_record.created_at = datetime.utcnow()
+    else:
+        otp_record = OtpVerification(
+            email=email,
+            otp=otp,
+            verified=0,
+            expires_at=expires_at
+        )
+        db.add(otp_record)
+    
+    db.commit()
+
+    # Send Email
+    subject = "SmartLearn AI - Your Signup Verification Code"
+    plain_body = f"Your verification code is: {otp}\n\nThis code expires in 5 minutes."
+    html_body = get_otp_email_template(otp)
+    
+    if not send_email(email, subject, plain_body, html_body):
+        logger.error(f"Failed to send email to {email}")
+        raise HTTPException(status_code=500, detail="Failed to send verification email")
+        
+    return {"message": "OTP sent successfully"}
+
+@router.post("/verify-signup-otp")
+def verify_signup_otp(request: VerifyOtpRequest, db: Session = Depends(get_db)):
+    email = request.email.strip().lower()
+    otp = request.otp.strip()
+    
+    otp_record = db.query(OtpVerification).filter(OtpVerification.email == email).first()
+    
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="OTP not sent or expired")
+    
+    if otp_record.otp != otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+        
+    if otp_record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP expired")
+        
+    otp_record.verified = 1
+    db.commit()
+    
+    return {"message": "Email verified successfully"}
+
 @router.post("/register", response_model=Token)
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
+    email = user.email.strip().lower()
+    
+    # 1. Existing User Check
+    if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # 2. Verify OTP Status
+    otp_record = db.query(OtpVerification).filter(OtpVerification.email == email).first()
+    if not otp_record or otp_record.verified != 1:
+        raise HTTPException(status_code=400, detail="Email not verified. Please verify your email first.")
+    
+    # Optional: Check if verification is too old (e.g., > 1 hour)? 
+    # For now, we trust verified=1.
+
     hashed_password = get_password_hash(user.password)
-    # Default role is 'student'
-    new_user = User(email=user.email, full_name=user.full_name, hashed_password=hashed_password, role="student")
+    new_user = User(email=email, full_name=user.full_name, hashed_password=hashed_password, role="student")
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -80,6 +163,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     # Create Student Record
     new_student = Student(user_id=new_user.id, full_name=user.full_name)
     db.add(new_student)
+    
+    # Consume OTP (Delete or mark used)
+    # Using verified=2 to indicate consumed
+    otp_record.verified = 2
     db.commit()
 
     # Include role, full_name and avatar_url in token
