@@ -409,3 +409,41 @@ def unfollow_teacher(teacher_user_id: int, db: Session = Depends(get_db), curren
     db.delete(follow)
     db.commit()
     return {"message": "Unfollowed successfully"}
+
+@router.get("/teacher/students")
+def get_teacher_students(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Ensure current user is a teacher
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # 2. Get Teacher Profile ID
+    teacher_profile = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+    if not teacher_profile:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+        
+    # 3. Fetch Follows
+    follows = db.query(StudentTeacherFollow).filter(
+        StudentTeacherFollow.teacher_id == teacher_profile.id
+    ).order_by(StudentTeacherFollow.created_at.desc()).all()
+    
+    # 4. Construct Response
+    results = []
+    for follow in follows:
+        student = db.query(Student).filter(Student.id == follow.student_id).first()
+        if student:
+            user = db.query(User).filter(User.id == student.user_id).first()
+            if user:
+                results.append({
+                    "student_id": student.id,
+                    "full_name": student.full_name,
+                    "username": user.email.split('@')[0], # Fallback usage or specific logic
+                    "email": user.email,
+                    "avatar_url": user.avatar_url,
+                    "followed_at": follow.created_at,
+                    "status": user.status
+                })
+                
+    return results

@@ -21,6 +21,7 @@ import Analytics from './pages/Analytics';
 import LandingPage from './pages/LandingPage';
 import UserManagement from './pages/admin/UserManagement'; // Import User Management
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
+import TeacherStudentList from './pages/teacher/TeacherStudentList';
 import StudentQuizList from './pages/student/StudentQuizList';
 import Teachers from './pages/student/Teachers';
 
@@ -71,6 +72,7 @@ function App() {
                                 <Route element={<ProtectedRoute allowedRoles={['teacher']} />}>
                                     <Route path="/teacher" element={<TeacherLayout />}>
                                         <Route index element={<TeacherDashboard />} />
+                                        <Route path="students" element={<TeacherStudentList />} />
                                         <Route path="quizzes" element={<QuizManagement />} />
                                         <Route path="exam-checker" element={<ExamChecker />} />
                                     </Route>
