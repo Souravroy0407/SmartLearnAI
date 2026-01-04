@@ -92,7 +92,7 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
             setLoadingAttempts(true);
             try {
                 const res = await axios.get(`/api/quiz/${quiz.id}/analytics`);
-                setAttempts(res.data);
+                setAttempts(res.data.student_results);
             } catch (error) {
                 console.error("Failed to fetch student attempts", error);
             } finally {
@@ -276,8 +276,12 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
                                                             <span className="font-bold text-green-600">{attempt.score}</span>
                                                         </div>
                                                         <div className="flex justify-between max-w-[140px]">
+                                                            <span className="text-xs uppercase tracking-wide text-gray-400">Wrong:</span>
+                                                            <span className="font-bold text-red-500">{Math.max(0, attempt.attempted_count - attempt.score)}</span>
+                                                        </div>
+                                                        <div className="flex justify-between max-w-[140px]">
                                                             <span className="text-xs uppercase tracking-wide text-gray-400">Attempted:</span>
-                                                            <span className="font-bold text-gray-700">{attempt.attempted_count}</span>
+                                                            <span className="font-bold text-gray-700">{attempt.attempted_count} / {attempt.total_questions || '?'}</span>
                                                         </div>
                                                         <div className="flex justify-between max-w-[140px]">
                                                             <span className="text-xs uppercase tracking-wide text-gray-400">Type:</span>

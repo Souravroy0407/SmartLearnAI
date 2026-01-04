@@ -314,10 +314,14 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
             QuizAttempt.status == "completed" 
         ).order_by(QuizAttempt.timestamp.desc()).all()
     
-    results = []
+    # Calculate total questions once
+    total_questions_count = db.query(Question).filter(Question.quiz_id == quiz_id).count()
+
+    student_results = []
+    
     for attempt, user, student in attempts:
         # Double check for timestamp validity
-        if not attempt.timestamp or attempt.timestamp == "":
+        if not attempt.timestamp:
             continue
 
         # Validate and convert timestamps
@@ -354,21 +358,34 @@ def get_quiz_analytics(quiz_id: int, db: Session = Depends(get_db), current_user
             StudentAnswer.selected_option_id.isnot(None)
         ).distinct().count()
         
-        results.append({
+        student_results.append({
             "id": attempt.id,
             "student_name": student_name,
             "student_email": user.email,
             "score": attempt.score,
             "attempted_count": attempted_count,
-            "total_questions": len(quiz.questions) if quiz.questions else 0, # Add total questions info if needed
+            "total_questions": total_questions_count,
             "submitted_at": attempt.timestamp,
+            "date": attempt.timestamp, # Added for frontend compatibility
             "warnings_count": attempt.warnings_count,
             "tab_switch_count": attempt.tab_switch_count,
             "time_taken": time_taken_str, 
             "submission_type": attempt.submission_type or "manual"
         })
+    
+    # Calculate Aggregates
+    total_attempts = len(student_results)
+    average_score = 0
+    if total_attempts > 0:
+        total_score = sum(r["score"] for r in student_results)
+        average_score = round(total_score / total_attempts)
         
-    return results
+    return {
+        "title": quiz.title,
+        "total_attempts": total_attempts,
+        "average_score": average_score,
+        "student_results": student_results
+    }
 # --- AI Generation ---
 
 @router.post("/generate-ai")

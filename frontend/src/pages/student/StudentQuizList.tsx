@@ -188,31 +188,57 @@ const StudentQuizList = () => {
         navigate(`/dashboard/student-quiz-result/${quizId}`);
     };
 
+    // Motivation Logic
+    const motivation = useMemo(() => {
+        if (stats.percentage === 100) return { message: "🎉 Amazing job! You've mastered all active quizzes!", icon: "🏆" };
+        if (stats.percentage >= 75) return { message: "🔥 You're on fire! Keep the streak alive!", icon: "🚀" };
+        if (stats.percentage >= 50) return { message: "Left half way there! Keep pushing!", icon: "💪" };
+        if (stats.percentage > 0) return { message: "Good start! Every quiz counts.", icon: "🌱" };
+        return { message: "Ready to start learning? Take your first quiz!", icon: "👋" };
+    }, [stats.percentage]);
+
     // Only show full page loader if we have no quizzes and it's loading
     // Using isRefreshing to keep list visible during manual refresh
     const showFullLoader = loading && quizzes.length === 0;
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-gradient-to-r from-white to-gray-50/50 p-8 rounded-3xl border border-gray-100 shadow-sm">
-                <div>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-gradient-to-r from-white to-gray-50/50 p-8 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden">
+                <div className="relative z-10">
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">Available Quizzes</h1>
                     <p className="text-gray-500 text-lg">Test your knowledge with these assessments.</p>
+
+                    {/* Motivation Strip */}
+                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary/5 text-primary rounded-xl text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <span className="text-lg">{motivation.icon}</span>
+                        {motivation.message}
+                    </div>
                 </div>
 
                 {/* Progress Summary Card */}
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm min-w-[280px]">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-bold text-gray-700">Your Progress</span>
-                        <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-lg">
-                            {stats.label}
+                <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/20 min-w-[300px] relative overflow-hidden group hover:shadow-xl transition-all duration-300">
+                    <div className="flex justify-between items-center mb-3">
+                        <div>
+                            <span className="text-sm font-bold text-gray-700 block">Your Progress</span>
+                            <span className="text-xs text-gray-400 font-medium">Based on active quizzes</span>
+                        </div>
+                        <span className="text-sm font-bold text-primary bg-primary/5 px-2.5 py-1 rounded-lg">
+                            {stats.percentage.toFixed(0)}%
                         </span>
                     </div>
-                    <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+
+                    <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden mb-2">
                         <div
-                            className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full transition-all duration-1000 ease-out"
+                            className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full transition-all duration-1000 ease-out relative"
                             style={{ width: `${stats.percentage}%` }}
-                        />
+                        >
+                            <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]" />
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                        <span className="font-medium text-gray-500">{stats.label}</span>
+                        <span className="text-primary font-medium">Keep going!</span>
                     </div>
                 </div>
             </div>
@@ -302,8 +328,8 @@ const StudentQuizList = () => {
                             <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4">
                                 <BookOpen className="w-8 h-8 opacity-20" />
                             </div>
-                            <p className="text-lg font-medium text-gray-500">No quizzes found</p>
-                            <p className="text-sm mb-6">Follow teachers to access their quizzes and content.</p>
+                            <p className="text-lg font-medium text-gray-500">No active quizzes found</p>
+                            <p className="text-sm mb-6 text-gray-400">Great job! You're all caught up.</p>
                             <button
                                 onClick={() => navigate('/dashboard/teachers')}
                                 className="px-6 py-2.5 bg-primary text-white rounded-xl font-medium shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
@@ -313,10 +339,6 @@ const StudentQuizList = () => {
                         </div>
                     ) : (
                         filteredQuizzes.map((quiz) => {
-                            // STRICT PRIORITY LOGIC:
-                            // 1. Expired (Overrides everything for status display)
-                            // 2. Attempted (Completed)
-                            // 3. Available (Active)
                             let uiStatus: 'EXPIRED' | 'COMPLETED' | 'AVAILABLE';
                             if (quiz.is_expired) {
                                 uiStatus = 'EXPIRED';
@@ -327,13 +349,22 @@ const StudentQuizList = () => {
                             }
 
                             return (
-                                <div key={quiz.id} className="group bg-white border border-gray-100 rounded-3xl p-6 hover:shadow-xl hover:shadow-gray-200/50 hover:border-primary/20 transition-all duration-300 relative flex flex-col">
+                                <div
+                                    key={quiz.id}
+                                    className={`
+                                        group bg-white border rounded-3xl p-6 relative flex flex-col
+                                        transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-gray-200/50
+                                        ${uiStatus === 'AVAILABLE' ? 'border-gray-100 hover:border-primary/20' :
+                                            uiStatus === 'COMPLETED' ? 'border-green-100 bg-green-50/10' :
+                                                'border-gray-100 bg-gray-50/50 opacity-80 hover:opacity-100'}
+                                    `}
+                                >
                                     <div className="flex justify-between items-start mb-6">
                                         <div className={`
                                         flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider
                                         ${uiStatus === 'EXPIRED' ? 'bg-red-100 text-red-700' :
-                                                uiStatus === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                                                    'bg-blue-50 text-blue-700'}
+                                                uiStatus === 'COMPLETED' ? 'bg-green-100 text-green-700 shadow-green-100/50' :
+                                                    'bg-blue-50 text-blue-700 shadow-blue-100/50'}
                                     `}>
                                             {uiStatus === 'EXPIRED' ? <AlertTriangle className="w-4 h-4" /> :
                                                 uiStatus === 'COMPLETED' ? <CheckCircle className="w-4 h-4" /> :
@@ -341,7 +372,6 @@ const StudentQuizList = () => {
                                             {uiStatus === 'EXPIRED' ? 'Expired' : uiStatus === 'COMPLETED' ? 'Completed' : 'Active'}
                                         </div>
 
-                                        {/* Difficulty Tag */}
                                         <span className={`
                                         px-2.5 py-1 rounded-lg text-xs font-bold border
                                         ${quiz.difficulty === 'Hard' ? 'bg-red-50 text-red-600 border-red-100' :
@@ -363,13 +393,25 @@ const StudentQuizList = () => {
                                     <p className="text-gray-500 text-sm mb-6 line-clamp-2 h-10">{quiz.description}</p>
 
                                     <div className="flex items-center gap-4 text-sm text-gray-500 mb-6 mt-auto">
-                                        <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg">
-                                            <FileText className="w-4 h-4" />
+                                        <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg group/info relative cursor-help">
+                                            <FileText className="w-4 h-4 text-gray-400 group-hover/info:text-primary transition-colors" />
                                             <span className="font-medium">{quiz.questions_count} Qs</span>
+
+                                            {/* Quick Info Tooltip */}
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-xl opacity-0 group-hover/info:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                                {quiz.questions_count} Questions
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg">
-                                            <Clock className="w-4 h-4" />
+                                        <div className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg group/info relative cursor-help">
+                                            <Clock className="w-4 h-4 text-gray-400 group-hover/info:text-primary transition-colors" />
                                             <span className="font-medium">{quiz.duration_minutes}m</span>
+
+                                            {/* Quick Info Tooltip */}
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-xl opacity-0 group-hover/info:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                                                {quiz.duration_minutes} Minutes Duration
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                                            </div>
                                         </div>
                                     </div>
 
