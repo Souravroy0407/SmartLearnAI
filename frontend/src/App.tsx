@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/admin/AdminDashboard'; // Import Admin Dashboard
 import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import TeacherLayout from './layouts/TeacherLayout';
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
 import ExamChecker from './pages/ExamChecker';
@@ -40,6 +41,7 @@ function App() {
                                 <Route path="/" element={<LandingPage />} />
                                 <Route path="/login" element={<LoginPage />} />
                                 <Route path="/signup" element={<SignupPage />} />
+                                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                                 <Route element={<ProtectedRoute />}>
                                     <Route path="/dashboard" element={<MainLayout />}>
                                         <Route index element={<Dashboard />} />
