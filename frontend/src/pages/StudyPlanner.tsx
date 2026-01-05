@@ -51,14 +51,16 @@ const StudyPlanner = () => {
     const [isUpdatingTask, setIsUpdatingTask] = useState(false); // Task Update Loading State (Reschedule)
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [taskToReschedule, setTaskToReschedule] = useState<StudyTask | null>(null);
-    const [taskToRescheduleAI, setTaskToRescheduleAI] = useState<StudyTask | null>(null);
-    const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
-    const [isFetchingAI, setIsFetchingAI] = useState(false);
+
 
     // Goal Editing State
     const [goalToEdit, setGoalToEdit] = useState<{ id: number; title: string } | null>(null);
     const [activeGoalMenuId, setActiveGoalMenuId] = useState<number | null>(null);
     const [goalMenuPlacement, setGoalMenuPlacement] = useState<'top' | 'bottom'>('bottom');
+    const [isClearTasksModalOpen, setIsClearTasksModalOpen] = useState(false);
+    const [goalToClearId, setGoalToClearId] = useState<number | null>(null);
+    const [isClearingTasks, setIsClearingTasks] = useState(false);
+    const [isDeleteGoalModalOpen, setIsDeleteGoalModalOpen] = useState(false); // Added missing state
     const [isEditGoalModalOpen, setIsEditGoalModalOpen] = useState(false); // Restored
     // Goal UI State
     const [isUpdatingGoalStatus, setIsUpdatingGoalStatus] = useState(false);
@@ -142,7 +144,7 @@ const StudyPlanner = () => {
         };
     }, [selectedDate, exams]);
 
-    // 1. Goal Title Map for efficient search
+    // 1. Goal Title Map for efficient search (Lowercase for easy matching)
     const goalTitleMap = useMemo(() => {
         const map = new Map<number, string>();
         exams.forEach(item => {
@@ -175,11 +177,8 @@ const StudyPlanner = () => {
             // Existing logic: intersects with manual/search
             if (filterGoalIds.size > 0) {
                 const taskGoalId = task.goal_id ? Number(task.goal_id) : null;
-                // If task has NO goal (and is manual), and filter is active, usually we hide it unless we want to show manual + goal?
-                // Current logic: strict goal filter.
+                // If filter is active, task MUST belong to one of the selected goals
                 if (taskGoalId !== null && !filterGoalIds.has(taskGoalId)) {
-                    // Exception: Maybe manual tasks without goal should show? 
-                    // Sticking to previous behavior: if filtered by goal, must match goal.
                     return false;
                 }
                 if (taskGoalId === null && filterGoalIds.size > 0) return false;
@@ -187,20 +186,24 @@ const StudyPlanner = () => {
 
             // C. Search Filter (if active and not a shortcut handled above)
             if (isSearchActive && !searchManual) {
+                // Shortcut: Completed
                 if (searchCompleted) {
                     return task.status === 'completed';
                 }
+                // Shortcut: Exam related
                 if (searchExam) {
-                    // Show tasks related to exams (or just type exam?)
-                    // Let's assume tasks with goal_id or type 'exam'
                     return task.task_type === 'exam' || !!task.goal_id;
                 }
 
                 // General Text Search
+                // 1. Task Title Match
                 const titleMatch = task.title.toLowerCase().includes(trimmedQuery);
+
+                // 2. Goal Title Match
                 let goalMatch = false;
                 if (task.goal_id) {
                     const goalTitle = goalTitleMap.get(Number(task.goal_id));
+                    // Check strict lowercase match
                     if (goalTitle && goalTitle.includes(trimmedQuery)) {
                         goalMatch = true;
                     }
@@ -481,33 +484,7 @@ const StudyPlanner = () => {
 
     // Exam deletion functions removed as they are no longer used
 
-    const handleDeleteGoal = (goalItem: any) => {
-        setGoalToDelete(goalItem);
-        setIsDeleteModalOpen(true);
-    };
 
-    const confirmDeleteGoal = async () => {
-        if (!goalToDelete) return;
-
-        setIsDeleteModalOpen(false); // Close confirm modal immediately to show loading screen
-        setIsDeletingGoal(true); // Show loading screen
-
-        try {
-            await api.delete(`/api/goals/${goalToDelete.exam.id}`);
-
-            // Optimistic update handled by refreshGoals
-            await refreshGoals();
-            await refreshAll(); // Clear related tasks from calendar
-
-            setGoalToDelete(null);
-            showToast('Goal deleted successfully', 'success');
-        } catch (error) {
-            console.error("Error deleting goal:", error);
-            showToast('Failed to delete goal', 'error');
-        } finally {
-            setIsDeletingGoal(false); // Hide loading screen
-        }
-    };
 
     const toggleGoalCompletion = async (goalItem: any) => {
         if (isUpdatingGoalStatus) return;
@@ -542,20 +519,6 @@ const StudyPlanner = () => {
         setIsUpdatingTask(true);
 
         try {
-            // Updated Context with ALL fields (Optimistic UI - Color, Date, Time, Duration)
-            const task = allTasks.find(t => t.id === taskToReschedule.id);
-            if (task) {
-                const optimisticUpdates = { ...updatedTaskPart };
-
-                // CRITICAL: Sync task_date if start_time changed
-                // This ensures the task moves to the correct day in the UI immediately
-                if (optimisticUpdates.start_time) {
-                    optimisticUpdates.task_date = optimisticUpdates.start_time.split('T')[0];
-                }
-
-                contextUpdateTask({ ...task, ...optimisticUpdates });
-            }
-
             // Prepare Strict API Payload (DB Fields Only)
             // Backend Schema: { task_date: str, task_time: datetime, duration_minutes: int }
             if (updatedTaskPart.start_time && updatedTaskPart.duration_minutes) {
@@ -588,179 +551,27 @@ const StudyPlanner = () => {
                     await api.put(`/api/study-planner/tasks/ai/${taskToReschedule.task_id}`, apiPayload);
                 }
 
+                // Success: Refresh Logic (DB Source of Truth)
+                await refreshAll();
+
                 setTaskToReschedule(null);
-                setIsUpdatingTask(false);
                 showToast('Task rescheduled', 'success');
             } else {
                 console.warn("Safety Check Failed: Missing start_time or duration_minutes for reschedule payload.");
-                setIsUpdatingTask(false);
-                // throw new Error("Missing required fields for reschedule"); // Removed to prevent crash
+                // throw new Error("Missing required fields for reschedule"); 
             }
 
         } catch (error) {
             console.error("Error updating task:", error);
-            refreshAll(); // Revert
-            setIsUpdatingTask(false);
+            // No revert needed - we never touched local state
             showToast('Failed to reschedule', 'error');
+        } finally {
+            setIsUpdatingTask(false);
         }
     };
 
     // --- Smart Local Rescheduling Logic ---
-    // --- Smart Local Rescheduling Logic (Optimized) ---
-    const findSmartSlots = (taskToMove: StudyTask) => {
-        const slotsFound = [];
-        const taskDate = new Date(taskToMove.start_time);
 
-        // 1. Determine Week Range
-        const currentDay = taskDate.getDay();
-        const diffToMon = currentDay === 0 ? -6 : 1 - currentDay;
-
-        const monday = new Date(taskDate);
-        monday.setDate(taskDate.getDate() + diffToMon);
-        monday.setHours(0, 0, 0, 0);
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        // Optimization: Pre-group all tasks by date string (YYYY-MM-DD)
-        // This makes the lookup O(1) inside the loop instead of O(N) filtering
-        const tasksByDate = new Map<string, StudyTask[]>();
-
-        allTasks.forEach(t => {
-            if (t.id === taskToMove.id) return; // Exclude self
-
-            let dateKey = t.task_date;
-            if (!dateKey) {
-                const d = new Date(t.start_time);
-                dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            }
-
-            if (!tasksByDate.has(dateKey)) {
-                tasksByDate.set(dateKey, []);
-            }
-            tasksByDate.get(dateKey)?.push(t);
-        });
-
-        // check 7 days of the week
-        for (let i = 0; i < 7; i++) {
-            const checkDate = new Date(monday);
-            checkDate.setDate(monday.getDate() + i);
-
-            // 2. Filter Past Dates
-            if (checkDate < today) continue;
-
-            const dayString = checkDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
-
-            // 3. Setup Day Boundaries (8:00 AM - 10:00 PM)
-            const dayStart = new Date(checkDate);
-            dayStart.setHours(8, 0, 0, 0);
-
-            const dayEnd = new Date(checkDate);
-            dayEnd.setHours(22, 0, 0, 0);
-
-            // 4. Get Tasks (O(1) Map Lookup + small Sort)
-            const tasksForDay = (tasksByDate.get(dateStr) || [])
-                .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-
-            // 5. Gap Finding
-            const requiredDurationMs = taskToMove.duration_minutes * 60 * 1000;
-            const bufferMs = 15 * 60 * 1000;
-            let currentPointer = dayStart.getTime();
-            const daySlots = [];
-
-            for (const t of tasksForDay) {
-                const tStart = new Date(t.start_time).getTime();
-                const tEnd = tStart + (t.duration_minutes * 60 * 1000);
-
-                // Check gap before this task
-                if (currentPointer + requiredDurationMs <= tStart) {
-                    daySlots.push({
-                        start: new Date(currentPointer).toISOString(),
-                        end: new Date(currentPointer + requiredDurationMs).toISOString()
-                    });
-                }
-                currentPointer = Math.max(currentPointer, tEnd + bufferMs);
-            }
-
-            // Check after last task
-            if (currentPointer + requiredDurationMs <= dayEnd.getTime()) {
-                daySlots.push({
-                    start: new Date(currentPointer).toISOString(),
-                    end: new Date(currentPointer + requiredDurationMs).toISOString()
-                });
-            }
-
-            if (daySlots.length > 0) {
-                slotsFound.push({
-                    date: dayString,
-                    iso_date: checkDate.toISOString(),
-                    slots: daySlots
-                });
-            }
-        }
-
-        return slotsFound;
-    };
-
-    const handleRescheduleSmartClick = (task: StudyTask) => {
-        setTaskToRescheduleAI(task);
-        setIsFetchingAI(true);
-        setAiSuggestions([]);
-
-        // Instant execution (No artificial delay)
-        // Wrapped in requestAnimationFrame to ensure modal opens smoothly first if needed, 
-        // but simple sync call is usually fastest for "instant" feel.
-        // We'll use a specific immediate execution.
-        try {
-            const slots = findSmartSlots(task);
-            setAiSuggestions(slots);
-        } catch (e) {
-            console.error("Error calculating slots", e);
-        } finally {
-            setIsFetchingAI(false);
-        }
-    };
-
-    const handleApplySmartSuggestion = async (suggestion: any) => {
-        if (!taskToRescheduleAI) return;
-
-        setIsUpdatingTask(true);
-
-        try {
-            const payload = {
-                task_date: suggestion.iso_start_time.split('T')[0],
-                task_time: suggestion.iso_start_time,
-                status: taskToRescheduleAI.status
-            };
-
-            // Calculate new end time for state update
-            // Optimistic Update
-            contextUpdateTask({
-                ...taskToRescheduleAI,
-                start_time: suggestion.iso_start_time
-                // end_time is not tracked in frontend state explicitly for StudyTask,
-                // it is derived or backend only.
-            });
-
-            // Conditional API Call for AI Tasks (or Manual if triggered here)
-            if (taskToRescheduleAI.source_type === 'manual') {
-                await api.put(`/api/study-planner/tasks/manual/${taskToRescheduleAI.task_id}`, payload);
-            } else {
-                await api.put(`/api/study-planner/tasks/ai/${taskToRescheduleAI.task_id}`, payload);
-            }
-
-            showToast('Rescheduled successfully', 'success');
-            setTaskToRescheduleAI(null); // Close modal
-            setIsUpdatingTask(false);
-        } catch (error) {
-            console.error("Failed to apply smart suggestion", error);
-            // Revert on error (fetch fresh)
-            refreshAll();
-            showToast('Failed to reschedule', 'error');
-            setIsUpdatingTask(false);
-        }
-    };
 
     const [changeDateError, setChangeDateError] = useState('');
     const [isChangingDate, setIsChangingDate] = useState(false);
@@ -930,6 +741,58 @@ const StudyPlanner = () => {
         }
     };
 
+    const handleDeleteGoalRequest = (goalId: number) => {
+        setGoalToDelete(goalId); // goalToDelete is defined as 'any' in state, but used as ID here? Line 47:  const [goalToDelete, setGoalToDelete] = useState<any>(null);
+        setIsDeleteGoalModalOpen(true);
+    };
+
+    const handleDeleteGoal = async (goalId: number) => {
+        setIsDeletingGoal(true);
+        try {
+            await api.delete(`/api/study-planner/goals/${goalId}`);
+            await refreshGoals();
+            showToast('Goal deleted successfully', 'success');
+        } catch (error) {
+            console.error("Failed to delete goal", error);
+            showToast('Failed to delete goal', 'error');
+        } finally {
+            setIsDeletingGoal(false);
+        }
+    };
+
+    const handleDeleteGoalWrapper = async () => {
+        if (goalToDelete) {
+            await handleDeleteGoal(goalToDelete);
+            setIsDeleteGoalModalOpen(false);
+            setGoalToDelete(null);
+        }
+    };
+
+    const handleClearTasks = (goalId: number) => {
+        setGoalToClearId(goalId);
+        setIsClearTasksModalOpen(true);
+        setActiveGoalMenuId(null);
+    };
+
+    const confirmClearTasks = async () => {
+        if (!goalToClearId) return;
+
+        setIsClearingTasks(true);
+        try {
+            await api.delete(`/api/study-planner/goals/${goalToClearId}/tasks`);
+            // Refresh logic
+            await refreshAll();
+            setIsClearTasksModalOpen(false);
+            setGoalToClearId(null);
+            showToast('All tasks cleared successfully', 'success');
+        } catch (error) {
+            console.error("Failed to clear tasks", error);
+            showToast('Failed to clear tasks. Please try again.', 'error');
+        } finally {
+            setIsClearingTasks(false);
+        }
+    };
+
     // Close menu when clicking outside or pressing Escape
     useEffect(() => {
         const handleClickOutside = () => setActiveMenuTaskId(null);
@@ -973,11 +836,21 @@ const StudyPlanner = () => {
         return new Date(isoString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
 
-    const formatDuration = (minutes: number) => {
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
+    const formatDuration = (minutes: any) => {
+        const mTotal = Number(minutes) || 0; // Safe parsing, default 0
+        const h = Math.floor(mTotal / 60);
+        const m = mTotal % 60;
         return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
     };
+
+    const visibleCalendarDays = calendarDays.filter(item => {
+        const year = item.fullDate.getFullYear();
+        const month = String(item.fullDate.getMonth() + 1).padStart(2, '0');
+        const day = String(item.fullDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        const isFilterActive = showManualOnly || searchQuery.trim().length > 0 || filterGoalIds.size > 0;
+        return isFilterActive ? highlightedDates.has(dateStr) : item.hasTask;
+    });
 
     return (
         <div className="max-w-5xl mx-auto space-y-8">
@@ -1036,17 +909,17 @@ const StudyPlanner = () => {
 
                                 <button
                                     onClick={() => {
-                                        const selectedIndex = calendarDays.findIndex(d =>
+                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
                                         );
                                         if (selectedIndex > 0) {
-                                            setSelectedDate(calendarDays[selectedIndex - 1].fullDate);
+                                            setSelectedDate(visibleCalendarDays[selectedIndex - 1].fullDate);
                                         }
                                     }}
-                                    disabled={calendarDays.length === 0 ||
-                                        calendarDays.findIndex(d =>
+                                    disabled={visibleCalendarDays.length === 0 ||
+                                        visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
@@ -1057,21 +930,21 @@ const StudyPlanner = () => {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        const selectedIndex = calendarDays.findIndex(d =>
+                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
                                         );
-                                        if (selectedIndex < calendarDays.length - 1 && selectedIndex !== -1) {
-                                            setSelectedDate(calendarDays[selectedIndex + 1].fullDate);
+                                        if (selectedIndex < visibleCalendarDays.length - 1 && selectedIndex !== -1) {
+                                            setSelectedDate(visibleCalendarDays[selectedIndex + 1].fullDate);
                                         }
                                     }}
-                                    disabled={calendarDays.length === 0 ||
-                                        calendarDays.findIndex(d =>
+                                    disabled={visibleCalendarDays.length === 0 ||
+                                        visibleCalendarDays.findIndex(d =>
                                             d.fullDate.getDate() === selectedDate.getDate() &&
                                             d.fullDate.getMonth() === selectedDate.getMonth() &&
                                             d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        ) >= calendarDays.length - 1}
+                                        ) >= visibleCalendarDays.length - 1}
                                     className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <ChevronRight className="w-5 h-5 text-secondary" />
@@ -1079,19 +952,8 @@ const StudyPlanner = () => {
                             </div>
                         </div>
                         <div className="flex overflow-x-auto pb-4 gap-2 scrollbar-thin scrollbar-thumb-secondary-light/20 scrollbar-track-transparent">
-                            {calendarDays.map((item, index) => {
+                            {visibleCalendarDays.map((item, index) => {
                                 const isSelected = selectedDate.getDate() === item.date && selectedDate.getMonth() === item.fullDate.getMonth();
-
-                                // Unified Highlight Logic (Search/Manual/Goal)
-                                const year = item.fullDate.getFullYear();
-                                const month = String(item.fullDate.getMonth() + 1).padStart(2, '0');
-                                const day = String(item.fullDate.getDate()).padStart(2, '0');
-                                const dateStr = `${year}-${month}-${day}`;
-
-                                const isFilterActive = showManualOnly || searchQuery.trim().length > 0 || filterGoalIds.size > 0;
-                                const hasTask = isFilterActive
-                                    ? highlightedDates.has(dateStr)
-                                    : item.hasTask;
 
                                 return (
                                     <button
@@ -1104,10 +966,8 @@ const StudyPlanner = () => {
                                     >
                                         <span className={`text-xs font-medium ${isSelected ? 'opacity-90' : 'opacity-60'}`}>{item.day}</span>
                                         <span className="text-xl font-bold">{item.date}</span>
-                                        {/* Indicator dot */}
-                                        <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' :
-                                            hasTask ? 'bg-primary' : 'bg-transparent'
-                                            }`}></div>
+                                        {/* Indicator dot - Always shown for visible days since they have tasks */}
+                                        <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-primary'}`}></div>
                                     </button>
                                 );
                             })}
@@ -1200,8 +1060,7 @@ const StudyPlanner = () => {
                                     // We fallback to 'bg-primary' to prevent crashes.
                                     const rawColor = (task as any).colourtag || task.color || 'bg-primary';
                                     const taskColor = typeof rawColor === 'string' ? rawColor : 'bg-primary';
-                                    const safeColorBase = taskColor.replace('bg-', 'bg-'); // Ensure no crash on replace
-                                    const safeColorText = taskColor.replace('bg-', '');
+
 
                                     return (
                                         <motion.div
@@ -1220,9 +1079,7 @@ const StudyPlanner = () => {
 
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${safeColorBase}/10 text-${safeColorText}`}>
-                                                        {task.task_type}
-                                                    </span>
+                                                    {/* Category label removed */}
                                                     {task.status === 'completed' && (
                                                         <CheckCircle2 className="w-4 h-4 text-success" />
                                                     )}
@@ -1293,17 +1150,7 @@ const StudyPlanner = () => {
                                                             className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
                                                         >
                                                             <Edit3 className="w-4 h-4" />
-                                                            Reschedule Manually
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                handleRescheduleSmartClick(task);
-                                                                setActiveMenuTaskId(null);
-                                                            }}
-                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
-                                                        >
-                                                            <Sparkles className="w-4 h-4" />
-                                                            Smart Reschedule
+                                                            Change Task Schedule
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -1468,22 +1315,7 @@ const StudyPlanner = () => {
                                             </div>
 
                                             {/* Hover Mark Complete Button */}
-                                            {/* Hover Mark Complete Button (Toggle) */}
-                                            <div className="absolute top-2 right-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleGoalCompletion(item);
-                                                    }}
-                                                    disabled={isUpdatingGoalStatus}
-                                                    className={`p-2 rounded-lg transition-colors ${item.goal_status === 'completed'
-                                                        ? 'text-success bg-success/10'
-                                                        : 'text-secondary-light hover:text-primary hover:bg-primary/10'}`}
-                                                    title={item.goal_status === 'completed' ? "Mark as active" : "Mark as completed"}
-                                                >
-                                                    <CheckCircle2 className="w-5 h-5" />
-                                                </button>
-                                            </div>
+
 
                                             {/* Goal Menu */}
                                             <div className="absolute top-2 right-2 z-20">
@@ -1516,6 +1348,16 @@ const StudyPlanner = () => {
                                                     >
                                                         <button
                                                             onClick={() => {
+                                                                toggleGoalCompletion(item);
+                                                                setActiveGoalMenuId(null);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-secondary-dark hover:bg-secondary-light/5 transition-colors border-b border-secondary-light/10"
+                                                        >
+                                                            <CheckCircle2 className={`w-4 h-4 ${item.goal_status === 'completed' ? 'text-success' : ''}`} />
+                                                            {item.goal_status === 'completed' ? 'Mark as Active' : 'Mark as Completed'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
                                                                 setGoalToEdit({ id: item.exam.id, title: item.exam.title });
                                                                 setIsEditGoalModalOpen(true);
                                                                 setActiveGoalMenuId(null);
@@ -1537,14 +1379,25 @@ const StudyPlanner = () => {
                                                             Change Exam Date
                                                         </button>
                                                         <button
-                                                            onClick={() => {
-                                                                handleDeleteGoal(item);
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteGoalRequest(item.exam.id);
                                                                 setActiveGoalMenuId(null);
                                                             }}
                                                             className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors"
                                                         >
                                                             <Trash2 className="w-4 h-4" />
                                                             Delete Goal
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleClearTasks(item.exam.id);
+                                                            }}
+                                                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-error hover:bg-error/5 transition-colors border-t border-secondary-light/10"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                            Clear all tasks
                                                         </button>
                                                     </div>
                                                 )}
@@ -1723,21 +1576,7 @@ const StudyPlanner = () => {
             }
 
             {/* AI Reschedule Suggestion Modal */}
-            {/* AI Reschedule Suggestion Modal */}
-            {
-                (taskToRescheduleAI || isFetchingAI) && (
-                    <RescheduleAIModal
-                        task={taskToRescheduleAI}
-                        suggestions={aiSuggestions}
-                        isLoading={isFetchingAI}
-                        onClose={() => {
-                            setTaskToRescheduleAI(null);
-                            setAiSuggestions([]);
-                        }}
-                        onSelect={handleApplySmartSuggestion}
-                    />
-                )
-            }
+
 
             {/* Delete Goal Confirmation Modal */}
             {
@@ -1769,7 +1608,7 @@ const StudyPlanner = () => {
                                         Cancel
                                     </button>
                                     <button
-                                        onClick={confirmDeleteGoal}
+                                        onClick={handleDeleteGoalWrapper}
                                         className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-error hover:bg-error/90 shadow-lg shadow-error/20 transition-colors"
                                     >
                                         Delete
@@ -1780,6 +1619,54 @@ const StudyPlanner = () => {
                     </div>
                 )
             }
+
+            {/* Clear Tasks Modal */}
+            {isClearTasksModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                    >
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-2">
+                                <Trash2 className="w-6 h-6" />
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-bold text-secondary-dark mb-2">Clear All Tasks?</h3>
+                                <p className="text-sm text-secondary">
+                                    Are you sure you want to delete all tasks for this goal? This action cannot be undone.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 w-full mt-2">
+                                <button
+                                    onClick={() => setIsClearTasksModalOpen(false)}
+                                    disabled={isClearingTasks}
+                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-secondary bg-secondary-light/10 hover:bg-secondary-light/20 transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmClearTasks}
+                                    disabled={isClearingTasks}
+                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-error hover:bg-error/90 shadow-lg shadow-error/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {isClearingTasks ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                            Clearing...
+                                        </>
+                                    ) : (
+                                        'Yes, clear all'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
             {/* Deleting Goal Overlay */}
             {isDeletingGoal && (
@@ -1872,6 +1759,91 @@ const StudyPlanner = () => {
                     setError={setChangeDateError}
                 />
             )}
+
+            {/* Delete Goal Modal */}
+            {isDeleteGoalModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                    >
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-2">
+                                <Trash2 className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-secondary-dark mb-2">Delete Planner?</h3>
+                                <p className="text-secondary mb-6 text-sm">
+                                    Are you sure you want to delete this goal? This action cannot be undone and will delete all associated tasks.
+                                </p>
+                            </div>
+                            <div className="flex gap-4 w-full">
+                                <button
+                                    onClick={() => setIsDeleteGoalModalOpen(false)}
+                                    className="flex-1 py-3 bg-secondary-light/10 text-secondary-dark font-bold rounded-xl hover:bg-secondary-light/20 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeleteGoalWrapper}
+                                    className="flex-1 py-3 bg-error text-white font-bold rounded-xl hover:bg-error-dark transition-colors shadow-lg shadow-error/20"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Clear Tasks Modal */}
+            {isClearTasksModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full"
+                    >
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-error/10 flex items-center justify-center text-error mb-2">
+                                <Trash2 className="w-6 h-6" />
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-bold text-secondary-dark mb-2">Clear All Tasks?</h3>
+                                <p className="text-sm text-secondary">
+                                    Are you sure you want to delete all tasks for this goal? This action cannot be undone.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 w-full mt-2">
+                                <button
+                                    onClick={() => setIsClearTasksModalOpen(false)}
+                                    disabled={isClearingTasks}
+                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-secondary bg-secondary-light/10 hover:bg-secondary-light/20 transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmClearTasks}
+                                    disabled={isClearingTasks}
+                                    className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-error hover:bg-error/90 shadow-lg shadow-error/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {isClearingTasks ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                            Clearing...
+                                        </>
+                                    ) : (
+                                        'Yes, clear all'
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div >
     );
 };
@@ -1888,15 +1860,28 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
     // Format time for input type="time" (HH:MM)
     const [time, setTime] = useState(taskDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 
-    const [duration, setDuration] = useState(task.duration_minutes);
+    const [duration, setDuration] = useState(task.duration_minutes || 60);
     const [priorityColor, setPriorityColor] = useState(task.color);
 
     const handleSubmit = () => {
-        // Construct new start_time ISO string
-        const newDateTime = new Date(`${date}T${time}:00`);
+        // Validations
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (date < todayStr) {
+            alert("Cannot reschedule to the past.");
+            return;
+        }
+
+        if (Number(duration) <= 0) {
+            alert("Duration must be a positive number.");
+            return;
+        }
+
+        // Construct new start_time ISO string (Local Time - No UTC conversion)
+        // We want strict YYYY-MM-DDTHH:mm:ss as selected by user.
+        const localISO = `${date}T${time}:00`;
 
         onSave({
-            start_time: newDateTime.toISOString(),
+            start_time: localISO,
             duration_minutes: Number(duration),
             color: priorityColor
         });
@@ -1925,6 +1910,7 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
                                 <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-light" />
                                 <input
                                     type="date"
+                                    min={new Date().toISOString().split('T')[0]} // Restrict past dates
                                     value={date}
                                     onChange={(e) => setDate(e.target.value)}
                                     className="w-full pl-10 pr-4 py-3 bg-secondary-light/5 border border-secondary-light/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-secondary-dark font-medium"
@@ -1950,6 +1936,8 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
                                 <label className="block text-xs font-bold text-secondary-light mb-1 uppercase tracking-wider">Mins</label>
                                 <input
                                     type="number"
+                                    min="1"
+                                    step="1"
                                     value={duration}
                                     onChange={(e) => setDuration(Number(e.target.value))}
                                     className="w-full px-4 py-3 bg-secondary-light/5 border border-secondary-light/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-secondary-dark font-medium text-center"
@@ -2001,163 +1989,7 @@ function RescheduleModal({ task, onClose, onSave }: { task: StudyTask, onClose: 
     );
 };
 
-// AI/Smart Reschedule Modal
-function RescheduleAIModal({ task, suggestions, isLoading, onClose, onSelect }: { task: StudyTask | null, suggestions: any[], isLoading: boolean, onClose: () => void, onSelect: (s: any) => void }) {
-    const [selectedDateIdx, setSelectedDateIdx] = useState<number | null>(null);
-    const [selectedSlot, setSelectedSlot] = useState<any | null>(null);
 
-    // Auto-select first date when suggestions load
-    useEffect(() => {
-        if (suggestions.length > 0 && selectedDateIdx === null) {
-            setSelectedDateIdx(0);
-        }
-    }, [suggestions]);
-
-    const activeDate = selectedDateIdx !== null ? suggestions[selectedDateIdx] : null;
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col md:flex-row max-h-[80vh]"
-            >
-                {/* Left Column: Date Selection */}
-                <div className="w-full md:w-1/3 bg-secondary-light/5 border-r border-secondary-light/10 p-6 flex flex-col">
-                    <div className="mb-6">
-                        <div className="flex items-center gap-2 text-secondary-dark mb-4">
-                            <Sparkles className="w-5 h-5 text-primary" />
-                            <h3 className="text-lg font-bold">Smart Reschedule</h3>
-                        </div>
-                        <p className="text-xs font-bold text-secondary-light uppercase tracking-wider mb-1">Task</p>
-                        <h4 className="text-sm font-bold text-secondary-dark line-clamp-2">{task?.title}</h4>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                        <p className="text-xs font-bold text-secondary-light uppercase tracking-wider mb-2">Available Dates</p>
-                        {isLoading ? (
-                            <div className="space-y-2">
-                                {[1, 2, 3].map(i => (
-                                    <div key={i} className="h-16 bg-secondary-light/10 rounded-xl animate-pulse" />
-                                ))}
-                            </div>
-                        ) : suggestions.length > 0 ? (
-                            suggestions.map((s, i) => {
-                                const dateObj = new Date(s.iso_date);
-                                const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                                const dayNum = dateObj.getDate();
-                                const isSelected = selectedDateIdx === i;
-
-                                return (
-                                    <button
-                                        key={s.iso_date} // STABLE KEY: Use Date string instead of index
-                                        onClick={() => {
-                                            setSelectedDateIdx(i);
-                                            setSelectedSlot(null);
-                                        }}
-                                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${isSelected
-                                            ? 'bg-white border-primary shadow-md shadow-primary/10'
-                                            : 'bg-transparent border-transparent hover:bg-white hover:border-secondary-light/20'
-                                            }`}
-                                    >
-                                        <div className={`flex flex-col items-center justify-center w-10 h-10 rounded-lg ${isSelected ? 'bg-primary text-white' : 'bg-secondary-light/10 text-secondary'
-                                            }`}>
-                                            <span className="text-[10px] font-bold uppercase leading-none">{dayName}</span>
-                                            <span className="text-sm font-bold leading-none">{dayNum}</span>
-                                        </div>
-                                        <div>
-                                            <span className={`text-sm font-bold block ${isSelected ? 'text-primary' : 'text-secondary-dark'}`}>
-                                                {dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                            </span>
-                                            <span className="text-xs text-secondary-light">{s.slots.length} slots found</span>
-                                        </div>
-                                    </button>
-                                );
-                            })
-                        ) : (
-                            <div className="p-4 bg-secondary-light/10 text-secondary text-xs rounded-xl text-center">
-                                No dates found this week.
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        onClick={onClose}
-                        className="mt-4 w-full py-3 border border-secondary-light/20 text-secondary font-bold rounded-xl hover:bg-white transition-colors text-sm"
-                    >
-                        Cancel
-                    </button>
-                </div>
-
-                {/* Right Column: Slot Selection */}
-                <div className="flex-1 p-6 flex flex-col bg-white">
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-bold text-secondary-dark">
-                            {activeDate
-                                ? `Select time for ${new Date(activeDate.iso_date).toLocaleDateString('en-US', { weekday: 'long' })}`
-                                : 'Select a date'}
-                        </h3>
-                        <button onClick={onClose} className="md:hidden p-2 hover:bg-secondary-light/10 rounded-full transition-colors">
-                            <X className="w-5 h-5 text-secondary" />
-                        </button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto pr-2">
-                        {activeDate ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {activeDate.slots.map((slot: any) => {
-                                    const start = new Date(slot.start);
-                                    const end = new Date(slot.end);
-                                    const isSelected = selectedSlot === slot;
-
-                                    return (
-                                        <button
-                                            key={slot.start} // STABLE KEY: Use Slot Start Time
-                                            onClick={() => setSelectedSlot(slot)}
-                                            className={`p-4 rounded-xl border-2 transition-all text-left ${isSelected
-                                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                                                : 'border-secondary-light/10 hover:border-primary/30 hover:bg-secondary-light/5'
-                                                }`}
-                                        >
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <Clock className={`w-4 h-4 ${isSelected ? 'text-primary' : 'text-secondary-light'}`} />
-                                                <span className={`text-sm font-bold ${isSelected ? 'text-primary' : 'text-secondary-dark'}`}>
-                                                    {start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                                                </span>
-                                            </div>
-                                            <span className="text-xs text-secondary-light block pl-6">
-                                                To {end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-secondary-light/50">
-                                <Clock className="w-12 h-12 mb-2 opacity-50" />
-                                <p className="text-sm">Select a date to view available slots</p>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="mt-6 pt-6 border-t border-secondary-light/10 flex justify-end">
-                        <button
-                            onClick={() => {
-                                if (selectedSlot) {
-                                    onSelect({ iso_start_time: selectedSlot.start });
-                                }
-                            }}
-                            disabled={!selectedSlot}
-                            className="px-8 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Confirm Reschedule
-                        </button>
-                    </div>
-                </div>
-            </motion.div>
-        </div>
-    );
-};
 
 
 
@@ -2222,6 +2054,9 @@ const EditTaskNameModal = ({ isOpen, onClose, onSave, initialName, isSaving }: {
                     </div>
                 </div>
             </motion.div>
+
+
+
         </div>
     );
 };

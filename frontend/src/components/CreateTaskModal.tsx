@@ -20,7 +20,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
 
     const [title, setTitle] = useState('');
     const [taskDate, setTaskDate] = useState(formatDate(selectedDate));
-    const [type, setType] = useState('Revision');
+
     const [color, setColor] = useState('bg-primary'); // Renamed/Adjusted label in UI
     const [startTime, setStartTime] = useState('09:00');
     const [duration, setDuration] = useState(60);
@@ -37,8 +37,20 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
         e.preventDefault();
 
         // Validation
-        if (!title.trim() || !taskDate || !startTime) {
+        if (!title.trim() || !taskDate || !startTime || !duration) {
             alert("Please fill in all required fields.");
+            return;
+        }
+
+        if (Number(duration) <= 0) {
+            alert("Duration must be a positive number.");
+            return;
+        }
+
+        // Prevent past dates
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (taskDate < todayStr) {
+            alert("Cannot create tasks in the past.");
             return;
         }
 
@@ -60,7 +72,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                 title,
                 task_date: taskDate,
                 colourtag: color, // Map 'color' state to 'colourtag'
-                task_time: startDateTime.toISOString()
+                task_time: `${taskDate}T${startTime}:00`,
+                duration_minutes: Number(duration)
             };
 
             console.log("POST about to be sent", payload);
@@ -108,63 +121,25 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                     <input
                         type="date"
                         required
+                        min={new Date().toISOString().split('T')[0]} // Restrict past dates
                         value={taskDate}
                         onChange={(e) => setTaskDate(e.target.value)}
                         className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Color Tag</label>
-                        <select
-                            value={color}
-                            onChange={(e) => setColor(e.target.value)}
-                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                        >
-                            <option value="bg-primary">Blue (Primary)</option>
-                            <option value="bg-warning">Yellow (Warning)</option>
-                            <option value="bg-error">Red (Urgent)</option>
-                            <option value="bg-success">Green (Done)</option>
-                        </select>
-                    </div>
-                    <div>
-                        {/* Hidden or optional Type field? User asked for 5 fields. Kept Type as it was there? 
-                             User list: Title, Date, Color, Start Time, Duration. 
-                             Does not mention Type. I will hide Type or assume Color Tag replaces it?
-                             Actually, code had Type AND Color. 
-                             User request: "Fields Required: ... 3. Color Tag ...". 
-                             It didn't explicitly ask to REMOVE Type. 
-                             But strict compliance usually implies "only these fields".
-                             However, backend likely needs 'task_type'.
-                             I'll keep 'Type' in state but maybe hide it or default it, strictly following UI list?
-                             "Fields Required: ...".
-                             Let's check if 'Type' was important. It defaults to 'Revision'.
-                             I'll assume I should keep it visible OR maybe the user missed it.
-                             "Color Tag dropdown - keep existing".
-                             "Title - keep existing".
-                             I'll keep 'Type' but maybe move it or leave it. 
-                             The user didn't say "REMOVE Type".
-                             But I'll stick to the visual layout requested: "Manual Create Task UI ... Fields Required..."
-                             I will keep 'Color Tag' prominently. 
-                             I'll comment out Type UI to be safe with "Fields Required" list, defaulting strictly to 'Revision'.
-                             Wait, if I remove Type UI, user can't select "Assignment".
-                             Let's keep Type UI but maybe put it with Color?
-                             Actually, looking at previous code, Type was there.
-                             I'll keep it there to be safe, creating valid tasks.
-                          */}
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                        <select
-                            value={type}
-                            onChange={(e) => setType(e.target.value)}
-                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                        >
-                            <option>Revision</option>
-                            <option>Practice Quiz</option>
-                            <option>Video Lecture</option>
-                            <option>Assignment</option>
-                        </select>
-                    </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color Tag</label>
+                    <select
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    >
+                        <option value="bg-primary">Blue (Primary)</option>
+                        <option value="bg-warning">Yellow (Warning)</option>
+                        <option value="bg-error">Red (Urgent)</option>
+                        <option value="bg-success">Green (Done)</option>
+                    </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -183,8 +158,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
                         <input
                             type="number"
                             required
-                            min="15"
-                            step="15"
+                            min="1"
+                            step="1"
                             value={duration}
                             onChange={(e) => setDuration(Number(e.target.value))}
                             className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"

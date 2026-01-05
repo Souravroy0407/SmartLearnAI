@@ -70,3 +70,5 @@ def complete_goal(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Goal and related tasks marked as completed"}
+
+

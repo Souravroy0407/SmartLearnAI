@@ -194,6 +194,7 @@ class CreateTaskManual(Base):
     task_date = Column(Date, nullable=False)
     colourtag = Column(String(50), nullable=True)
     task_time = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, nullable=False, default=60)
     status = Column(String(50), nullable=False, default='pending')
     created_at = Column(DateTime, default=datetime.utcnow)
 
