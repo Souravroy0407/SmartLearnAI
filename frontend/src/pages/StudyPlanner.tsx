@@ -13,13 +13,13 @@ import { useStudyPlanner, type StudyTask } from '../context/StudyPlannerContext'
 
 const StudyPlanner = () => {
     // Global State
+    // Global State
     const {
         allTasks,
         exams,
         calendarDays,
         userEnergyPref,
         isLoading: isGlobalLoading,
-        ensureDataLoaded,
         updateTask: contextUpdateTask,
         updateTasksBulk: contextUpdateTasksBulk,
         deleteTask: contextDeleteTask,
@@ -27,12 +27,14 @@ const StudyPlanner = () => {
         refreshGoals,
         refreshAll,
         addTasksBulk,
-        updateGoal
+        updateGoal,
+        selectedDate,      // <--- ADDED
+        setSelectedDate    // <--- ADDED
     } = useStudyPlanner();
 
     // Local UI State
     const [isGoalsExpanded, setIsGoalsExpanded] = useState(false);
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    // REMOVED: const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [isMuted, setIsMuted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
@@ -98,8 +100,20 @@ const StudyPlanner = () => {
 
     // Initial Data Load
     useEffect(() => {
-        ensureDataLoaded();
+        // ALWAYS refresh on mount to ensure "Immediate" visibility if we navigated back
+        refreshAll();
     }, []);
+
+    // Helper Handler for Manual Task Creation
+    const handleManualTaskCreated = async (newDate: Date) => {
+        // 1. Switch Planner to that date
+        setSelectedDate(newDate);
+
+        // 2. Refresh Data (Critical Step 1)
+        await refreshAll();
+
+        showToast('Task added successfully', 'success');
+    };
 
     // CLICK-OUTSIDE HANDLER for Goal Menu
     // The menu and its button use e.stopPropagation(), so checking for document clicks
@@ -1432,7 +1446,7 @@ const StudyPlanner = () => {
             <CreateTaskModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onTaskCreated={() => refreshAll()}
+                onTaskCreated={handleManualTaskCreated}
                 selectedDate={selectedDate}
             />
 
@@ -1441,7 +1455,9 @@ const StudyPlanner = () => {
                 onClose={() => setIsGoalModalOpen(false)}
                 onGoalCreated={() => {
                     refreshGoals();
+                    showToast('Goal created successfully', 'success');
                 }}
+                onError={(msg) => showToast(msg, 'error')}
             />
 
             <GeneratePlanModal

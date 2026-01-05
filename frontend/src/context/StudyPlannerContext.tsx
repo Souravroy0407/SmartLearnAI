@@ -55,6 +55,8 @@ interface StudyPlannerContextType {
     userEnergyPref: string | null;
     isLoaded: boolean;
     isLoading: boolean;
+    selectedDate: Date;
+    setSelectedDate: (date: Date) => void;
     refreshData: () => Promise<void>;
     refreshGoals: () => Promise<void>;
     refreshTasks: () => Promise<void>;
@@ -81,6 +83,9 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
     const [userEnergyPref, setUserEnergyPref] = useState<string | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Global Date State (Persistence Fix)
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
     // userEnergyPref is now handled purely at runtime
     // Removing fetchUserPref logic and setting initial state to null
@@ -275,6 +280,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             userEnergyPref,
             isLoaded,
             isLoading,
+            selectedDate,
+            setSelectedDate,
             refreshData,
             refreshGoals,
             refreshTasks,

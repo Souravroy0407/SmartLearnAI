@@ -523,7 +523,7 @@ class GeneratePlanRequest(BaseModel):
     topics: str
     start_date: PyDate
     end_date: PyDate
-    hours_per_day: int
+    hours_per_day: float
     mode: Optional[str] = "create" # 'create', 'full_regenerate', 'extend_only', 'keep_existing'
 
 @router.post("/generate", response_model=List[StudyTaskResponse])
@@ -605,7 +605,7 @@ def generate_study_plan(
     # 3. Deterministic Task Generation
     try:
         # Calculate Duration (Minutes)
-        duration_minutes = request.hours_per_day * 60
+        duration_minutes = int(request.hours_per_day * 60)
         
         # Parse Topics
         topic_list = [t.strip() for t in request.topics.split(',') if t.strip()]
