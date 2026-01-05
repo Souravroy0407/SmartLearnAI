@@ -7,12 +7,14 @@ interface CreateGoalModalProps {
     isOpen: boolean;
     onClose: () => void;
     onGoalCreated?: () => void;
+    onError?: (message: string) => void;
 }
 
-export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: CreateGoalModalProps) {
+export default function CreateGoalModal({ isOpen, onClose, onGoalCreated, onError }: CreateGoalModalProps) {
     const [title, setTitle] = useState('');
     const [type, setType] = useState<'Exam' | 'Others'>('Exam');
     const [date, setDate] = useState('');
+    const [error, setError] = useState('');
 
     const [isLoading, setIsLoading] = useState(false);
 
@@ -22,6 +24,8 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
         if (!title.trim() || isLoading) return;
 
         setIsLoading(true);
+        setError('');
+
         try {
             const payload = {
                 title,
@@ -29,9 +33,6 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
                 date: date || null
             };
 
-            // Assuming 'api' is an imported axios instance or similar
-            // For this example, we'll simulate an API call
-            // await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
             await api.post('/api/study-planner/goals', payload);
             console.log("Goal created successfully", payload);
 
@@ -46,11 +47,11 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
             setDate('');
             onClose();
 
-            // Note: Data refresh is not explicitly handled here as per strict requirements,
-            // but normally we would trigger a refresh.
-        } catch (error) {
-            console.error("Failed to create goal:", error);
-            // Optionally could show a toast here if Toast context was available
+        } catch (err: any) {
+            console.error("Failed to create goal:", err);
+            const msg = err.response?.data?.detail || "Failed to create goal. Please try again.";
+            setError(msg);
+            if (onError) onError(msg);
         } finally {
             setIsLoading(false);
         }
@@ -84,6 +85,12 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
                         </div>
 
                         <form onSubmit={handleSubmit} className="space-y-5">
+                            {error && (
+                                <div className="bg-error/10 text-error text-sm p-3 rounded-xl flex items-center gap-2 animate-pulse">
+                                    <X className="w-4 h-4" />
+                                    {error}
+                                </div>
+                            )}
                             {/* Title Field */}
                             <div>
                                 <label className="block text-xs font-bold text-secondary-light uppercase tracking-wider mb-1.5">

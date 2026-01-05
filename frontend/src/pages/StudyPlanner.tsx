@@ -1455,7 +1455,9 @@ const StudyPlanner = () => {
                 onClose={() => setIsGoalModalOpen(false)}
                 onGoalCreated={() => {
                     refreshGoals();
+                    showToast('Goal created successfully', 'success');
                 }}
+                onError={(msg) => showToast(msg, 'error')}
             />
 
             <GeneratePlanModal
