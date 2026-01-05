@@ -1,6 +1,6 @@
 
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, BookOpen, CheckCircle, Clock } from 'lucide-react';
+import { TrendingUp, BookOpen, CheckCircle, Clock, Info } from 'lucide-react';
 
 const Dashboard = () => {
     const stats = [
@@ -22,6 +22,20 @@ const Dashboard = () => {
 
     return (
         <div className="space-y-8">
+            {/* Under Construction Banner */}
+            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 flex items-start gap-4">
+                <div className="p-3 bg-primary/10 rounded-xl shrink-0">
+                    <Info className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold text-primary mb-1">Dashboard Data Under Development</h3>
+                    <p className="text-secondary leading-relaxed">
+                        You're seeing a preview of the dashboard layout. We're currently working on connecting real-time data.
+                        Please use other features like <span className="font-semibold text-secondary-dark">Quizzes</span>, <span className="font-semibold text-secondary-dark">Study Planner</span>, and <span className="font-semibold text-secondary-dark">Doubt Solver</span>.
+                    </p>
+                </div>
+            </div>
+
             <div>
                 <h1 className="text-2xl font-bold text-secondary-dark">Student Dashboard</h1>
                 <p className="text-secondary">Welcome back, Alex! Here's your learning summary.</p>

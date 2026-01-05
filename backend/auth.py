@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import get_db
 from models import User, Student, OtpVerification
 from utils.smtp import send_email, get_otp_email_template
@@ -53,7 +53,7 @@ def get_password_hash(password):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -86,20 +86,20 @@ def send_signup_otp(request: SendOtpRequest, db: Session = Depends(get_db)):
 
     # Generate OTP
     otp = str(random.randint(1000, 9999))
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     
     # Update or Create OTP record
     otp_record = db.query(OtpVerification).filter(OtpVerification.email == email).first()
     if otp_record:
         otp_record.otp = otp
-        otp_record.verified = 0
+        otp_record.verified = False
         otp_record.expires_at = expires_at
-        otp_record.created_at = datetime.utcnow()
+        otp_record.created_at = datetime.now(timezone.utc)
     else:
         otp_record = OtpVerification(
             email=email,
             otp=otp,
-            verified=0,
+            verified=False,
             expires_at=expires_at
         )
         db.add(otp_record)
@@ -107,8 +107,8 @@ def send_signup_otp(request: SendOtpRequest, db: Session = Depends(get_db)):
     db.commit()
 
     # Send Email
-    subject = "SmartLearn AI - Your Signup Verification Code"
-    plain_body = f"Your verification code is: {otp}\n\nThis code expires in 5 minutes."
+    subject = f"SmartLearn AI – Your Verification Code: {otp}"
+    plain_body = f"Your SmartLearn AI verification code is:\n\n{otp}\n\nThis code expires in 5 minutes."
     html_body = get_otp_email_template(otp)
     
     if not send_email(email, subject, plain_body, html_body):
@@ -130,10 +130,11 @@ def verify_signup_otp(request: VerifyOtpRequest, db: Session = Depends(get_db)):
     if otp_record.otp != otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
         
-    if otp_record.expires_at < datetime.utcnow():
+    # Check expiry
+    if otp_record.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="OTP expired")
         
-    otp_record.verified = 1
+    otp_record.verified = True
     db.commit()
     
     return {"message": "Email verified successfully"}
@@ -148,12 +149,9 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     
     # 2. Verify OTP Status
     otp_record = db.query(OtpVerification).filter(OtpVerification.email == email).first()
-    if not otp_record or otp_record.verified != 1:
+    if not otp_record or not otp_record.verified:
         raise HTTPException(status_code=400, detail="Email not verified. Please verify your email first.")
     
-    # Optional: Check if verification is too old (e.g., > 1 hour)? 
-    # For now, we trust verified=1.
-
     hashed_password = get_password_hash(user.password)
     new_user = User(email=email, full_name=user.full_name, hashed_password=hashed_password, role="student")
     db.add(new_user)
@@ -164,9 +162,8 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     new_student = Student(user_id=new_user.id, full_name=user.full_name)
     db.add(new_student)
     
-    # Consume OTP (Delete or mark used)
-    # Using verified=2 to indicate consumed
-    otp_record.verified = 2
+    # Consume OTP (Delete record)
+    db.delete(otp_record)
     db.commit()
 
     # Include role, full_name and avatar_url in token

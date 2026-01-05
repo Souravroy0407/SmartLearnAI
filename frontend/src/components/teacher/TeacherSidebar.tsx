@@ -1,4 +1,4 @@
-import { LayoutDashboard, BookOpen, Settings, LogOut, X, Users } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Settings, LogOut, X, Users, AlertCircle } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -10,7 +10,7 @@ interface SidebarProps {
 const TeacherSidebar = ({ isOpen, onClose }: SidebarProps) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/teacher' },
-        
+
         // { icon: BookOpen, label: 'Exam Checker', path: '/teacher/exam-checker' },
         { icon: Settings, label: 'Quiz Management', path: '/teacher/quizzes' },
         { icon: Users, label: 'Students', path: '/teacher/students' },
@@ -53,6 +53,9 @@ const TeacherSidebar = ({ isOpen, onClose }: SidebarProps) => {
                         >
                             <item.icon className="w-5 h-5" />
                             <span className="font-medium">{item.label}</span>
+                            {item.label === 'Dashboard' && (
+                                <AlertCircle className="w-4 h-4 text-amber-500 ml-auto" />
+                            )}
                         </NavLink>
                     ))}
                 </nav>

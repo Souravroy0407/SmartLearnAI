@@ -1,4 +1,4 @@
-import { Users, BookOpen, Clock, Activity } from 'lucide-react';
+import { Users, BookOpen, Clock, Activity, Info } from 'lucide-react';
 
 const StatCard = ({ icon: Icon, label, value, trend, trendUp }: { icon: any, label: string, value: string, trend: string, trendUp: boolean }) => (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-secondary-light/10">
@@ -27,6 +27,19 @@ const TeacherDashboard = () => {
                     <button className="bg-primary text-white px-6 py-2 rounded-xl font-medium hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">
                         Create Assignment
                     </button>
+                </div>
+            </div>
+
+            {/* Under Construction Banner */}
+            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 flex items-start gap-4">
+                <div className="p-3 bg-primary/10 rounded-xl shrink-0">
+                    <Info className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold text-primary mb-1">Dashboard Data Under Development</h3>
+                    <p className="text-secondary leading-relaxed">
+                        You're currently viewing a preview of the dashboard. We're working on connecting real-time teacher analytics and data.
+                    </p>
                 </div>
             </div>
 

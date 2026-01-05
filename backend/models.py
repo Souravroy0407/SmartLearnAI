@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date
-from datetime import datetime
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean
+from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -41,7 +41,7 @@ class Teacher(Base):
     teaching_style = Column(String(1000))
     linkedin_url = Column(String(255))
     website_url = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="teacher_profile")
     quizzes = relationship("Quiz", back_populates="teacher")
@@ -54,7 +54,7 @@ class Student(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     full_name = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     user = relationship("User", back_populates="student_profile")
     quiz_attempts = relationship("QuizAttempt", back_populates="student")
 
@@ -65,7 +65,7 @@ class Admin(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="admin_profile")
 
@@ -77,7 +77,7 @@ class StudentTeacherFollow(Base):
     id = Column(Integer, primary_key=True, index=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 # ===================== QUIZZES =====================
 
@@ -89,7 +89,7 @@ class Quiz(Base):
     description = Column(String(500))
     duration_minutes = Column(Integer)
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     deadline = Column(DateTime)
     difficulty = Column(String(50))
     subject = Column(String(100)) # Added subject
@@ -159,7 +159,7 @@ class StudyGoal(Base):
     type = Column(String(50), nullable=False)
     date = Column(Date, nullable=True)
     current_status = Column(String(50), nullable=False, default='active')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     tasks = relationship("CreateTaskAI", back_populates="goal", cascade="all, delete-orphan")
 
@@ -179,7 +179,7 @@ class CreateTaskAI(Base):
     duration_minutes = Column(Integer, nullable=True)
     sequence_no = Column(Integer, nullable=True)
     task_status = Column(String(50), nullable=False, default="active")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     # Relationship
     goal = relationship("StudyGoal", back_populates="tasks")
 
@@ -196,7 +196,7 @@ class CreateTaskManual(Base):
     task_time = Column(DateTime, nullable=True)
     duration_minutes = Column(Integer, nullable=False, default=60)
     status = Column(String(50), nullable=False, default='pending')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 # ===================== OTP VERIFICATION =====================
 
@@ -206,6 +206,6 @@ class OtpVerification(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, nullable=False)
     otp = Column(String(4), nullable=False)
-    verified = Column(Integer, default=0)
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    verified = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
