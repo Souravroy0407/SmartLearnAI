@@ -5,7 +5,7 @@ import api from '../api/axios';
 interface CreateTaskModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onTaskCreated: () => void;
+    onTaskCreated: (date: Date) => void;
     selectedDate: Date;
 }
 
@@ -84,7 +84,17 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ isOpen, onClose, onTa
             console.log("POST completed");
 
             // Only close and update parent state on success
-            if (onTaskCreated) onTaskCreated();
+            if (onTaskCreated) {
+                // Pass the task date back to parent to switch view
+                // taskDate is string YYYY-MM-DD
+
+                // Adjust for local time if necessary, but straight Date(YYYY-MM-DD) defaults to UTC Midnight.
+                // However, the input is YYYY-MM-DD from basic date picker.
+                // Let's ensure we parse it as local midnight to match calendar expectations.
+                const [y, m, d] = taskDate.split('-').map(Number);
+                const localDate = new Date(y, m - 1, d);
+                onTaskCreated(localDate);
+            }
             onClose();
 
             // Reset form
