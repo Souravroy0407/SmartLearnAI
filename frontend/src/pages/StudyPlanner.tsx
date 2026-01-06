@@ -13,24 +13,37 @@ import { useStudyPlanner, type StudyTask } from '../context/StudyPlannerContext'
 
 const StudyPlanner = () => {
     // Global State
-    // Global State
     const {
         allTasks,
         exams,
         calendarDays,
         userEnergyPref,
         isLoading: isGlobalLoading,
-        updateTask: contextUpdateTask,
         updateTasksBulk: contextUpdateTasksBulk,
-        deleteTask: contextDeleteTask,
         setUserEnergyPref,
         refreshGoals,
         refreshAll,
         addTasksBulk,
-        updateGoal,
         selectedDate,      // <--- ADDED
         setSelectedDate    // <--- ADDED
     } = useStudyPlanner();
+
+    // Helper: Reset to Planner Start
+    const resetToPlannerStart = (tasks: StudyTask[]) => {
+        if (!tasks || tasks.length === 0) return;
+
+        // Find the earliest task date
+        const timestamps = tasks.map(t => new Date(t.start_time).getTime());
+        const minDateTimestamp = Math.min(...timestamps);
+        const minDate = new Date(minDateTimestamp);
+
+        // Reset time to ensure clean date match
+        // Note: selectedDate is used to generate calendar view. 
+        // We usually want it to be the exact date object or at least correct day.
+        // Let's normalize it to local midnight if possible, or just pass the date object.
+        // The calendar logic handles date objects.
+        setSelectedDate(minDate);
+    };
 
     // Local UI State
     const [isGoalsExpanded, setIsGoalsExpanded] = useState(false);
@@ -105,12 +118,12 @@ const StudyPlanner = () => {
     }, []);
 
     // Helper Handler for Manual Task Creation
-    const handleManualTaskCreated = async (newDate: Date) => {
-        // 1. Switch Planner to that date
-        setSelectedDate(newDate);
+    const handleManualTaskCreated = async () => {
+        // 1. Refresh Data (Critical Step 1)
+        const tasks = await refreshAll();
 
-        // 2. Refresh Data (Critical Step 1)
-        await refreshAll();
+        // 2. Jump to Planner Start (Strict Requirement)
+        resetToPlannerStart(tasks);
 
         showToast('Task added successfully', 'success');
     };
@@ -429,34 +442,25 @@ const StudyPlanner = () => {
         const isNowCompleted = currentStatus !== 'completed';
         const newStatus = isNowCompleted ? 'completed' : 'pending';
 
-        // Update color based on status (success for completed, original/primary if pending)
-        // Note: Ideally we'd restore original priority color, but defaulting to primary is safe fallback
-        // If we want to preserve original color, we might need a separate field or logic.
-        // For now, let's assume 'bg-success' for completed, and revert to 'bg-primary' for pending 
-        // unless we know the original. A better approach is to keep color as priority and use a separate UI style for completion.
-        // However, the existing UI uses color for completion status too.
-
-        const updatedTask = {
-            ...task,
-            status: newStatus,
-            color: isNowCompleted ? 'bg-success' : 'bg-primary'
-        };
-
         try {
-            // Optimistic update via Context
-            contextUpdateTask(updatedTask);
-
+            // Updated: No optimistic update. Call API then refresh.
             if (task.is_manual) {
-                // Unified endpoint handles both, but context logic separates them slightly?
-                // Actually the unified update endpoint `PUT /api/study-planner/tasks/{id}` works for both now.
-                // Reverting to unified call.
                 await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
             } else {
                 await api.put(`/api/study-planner/tasks/${taskId}`, { status: newStatus });
             }
+
+            await refreshAll();
+            // showToast(isNowCompleted ? 'Task completed!' : 'Task unmarked', 'success'); // Optional: Add toast if desired, but maybe too noisy for simple checks? User asked for "Success toast/message on successful action".
+            // The existing code didn't have a success toast for completion, only error. 
+            // The request says: "5. Add user feedback: Success toast/message on successful action"
+            // So I should probably add one, but maybe checkboxes are usually silent? 
+            // "When any action is performed... The planner only updates on page reload... EXPECTED: Auto-refresh... 5. Add user feedback"
+            // I will add a subtle toast.
+            showToast(isNowCompleted ? 'Task completed' : 'Task status updated', 'success');
+
         } catch (error) {
             console.error("Error updating task:", error);
-            contextUpdateTask(task); // Revert on error
             showToast('Failed to update status', 'error');
         }
     };
@@ -478,8 +482,8 @@ const StudyPlanner = () => {
             }
 
             // Update state ONLY after successful API response
-            // Note: Context still uses internal 'id' for state management
-            contextDeleteTask(taskToDelete.id);
+            await refreshAll();
+
             setTaskToDelete(null); // Close modal only on success
             showToast('Task deleted', 'success');
         } catch (error) {
@@ -741,8 +745,8 @@ const StudyPlanner = () => {
         setIsSavingGoal(true);
         try {
             await api.patch(`/api/study-planner/goals/${goalToEdit.id}`, { title: newTitle });
-            // Optimistic update: Update local state immediately without refetch
-            updateGoal(goalToEdit.id, newTitle);
+            // Updated: Refresh data instead of optimistic update
+            await refreshAll();
 
             setIsEditGoalModalOpen(false);
             setGoalToEdit(null);
@@ -764,7 +768,7 @@ const StudyPlanner = () => {
         setIsDeletingGoal(true);
         try {
             await api.delete(`/api/study-planner/goals/${goalId}`);
-            await refreshGoals();
+            await refreshAll(); // Updated to refreshAll for full sync
             showToast('Goal deleted successfully', 'success');
         } catch (error) {
             console.error("Failed to delete goal", error);
@@ -1454,7 +1458,7 @@ const StudyPlanner = () => {
                 isOpen={isGoalModalOpen}
                 onClose={() => setIsGoalModalOpen(false)}
                 onGoalCreated={() => {
-                    refreshGoals();
+                    refreshGoals(); // Updated: Refresh goals ONLY (no task fetch required)
                     showToast('Goal created successfully', 'success');
                 }}
                 onError={(msg) => showToast(msg, 'error')}
@@ -1463,9 +1467,9 @@ const StudyPlanner = () => {
             <GeneratePlanModal
                 isOpen={isAIModalOpen}
                 onClose={() => setIsAIModalOpen(false)}
-                onPlanGenerated={(newTasks) => {
-                    addTasksBulk(newTasks);
-                    refreshGoals(); // Refresh goals to ensure consistency/status updates if any
+                onPlanGenerated={async () => {
+                    const tasks = await refreshAll();
+                    resetToPlannerStart(tasks);
                 }}
                 goals={exams.map(e => ({ id: e.exam.id, title: e.exam.title, deadline: e.exam.deadline }))}
                 initialGoalId={genModalState.initialGoalId}
