@@ -110,8 +110,11 @@ const StudentQuizList = () => {
 
     useEffect(() => {
         fetchTeachers();
-        fetchQuizzes();
-    }, [fetchTeachers, fetchQuizzes]);
+        // Force refresh quizzes if a teacher is selected to ensure we get their specific data
+        // even if we have some cached quizzes (which might be from a previous teacher or general load)
+        const shouldForce = !!selectedTeacherId;
+        fetchQuizzes(shouldForce);
+    }, [fetchTeachers, fetchQuizzes, selectedTeacherId]);
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
