@@ -1,24 +1,4 @@
-import os
-import smtplib
-import logging
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from dotenv import load_dotenv # Assuming this is needed for SMTP_HOST etc.
-
-# Placeholder for constants if dotenv is not used or for default values
-# These would typically be loaded from .env or defined globally
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.example.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", "user@example.com")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "password")
-SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@example.com")
-
-# Initialize logger
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 def get_otp_email_template(otp_code: str) -> str:
     """
@@ -247,60 +227,3 @@ def get_password_reset_template(otp_code: str) -> str:
     </body>
     </html>
     """
-
-def send_email(to_email: str, subject: str, body: str, html_body: str = None) -> bool:
-    """
-    Sends an email using the configured SMTP server.
-    Args:
-        to_email: Recipient email
-        subject: Email subject
-        body: Plain text body
-        html_body: Optional HTML body
-    """
-    # Re-fetch or check variables to ensure we have the latest environment state
-    # or if module-level load failed.
-    host = os.getenv("SMTP_HOST") or SMTP_HOST
-    port = int(os.getenv("SMTP_PORT") or SMTP_PORT or 587)
-    username = os.getenv("SMTP_USERNAME") or SMTP_USERNAME
-    password = os.getenv("SMTP_PASSWORD") or SMTP_PASSWORD
-    sender = os.getenv("SMTP_FROM") or SMTP_FROM
-
-    logger.info(f"Attempting to send email to {to_email} via {host}:{port}")
-
-    if not all([host, username, password, sender]):
-        logger.error(f"Missing SMTP credentials! Host: {host}, User: {username}, From: {sender}")
-        return False
-
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['From'] = sender
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        
-        # Attach plain text part
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # Attach HTML part if provided
-        if html_body:
-            msg.attach(MIMEText(html_body, 'html'))
-
-        logger.info("Connecting to SMTP server...")
-        server = smtplib.SMTP(host, port)
-        server.starttls()
-        
-        logger.info("Logging in to SMTP server...")
-        server.login(username, password)
-        
-        logger.info(f"Sending mail to {to_email}...")
-        text = msg.as_string()
-        server.sendmail(sender, to_email, text)
-        server.quit()
-        
-        logger.info(f"✅ Email successfully sent to {to_email}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Failed to send email to {to_email}: {str(e)}", exc_info=True)
-        return False
-
-# Backward compatibility alias
-send_plain_email = send_email

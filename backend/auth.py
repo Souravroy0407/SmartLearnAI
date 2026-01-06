@@ -7,7 +7,8 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
 from database import get_db
 from models import User, Student, OtpVerification
-from utils.smtp import send_email, get_otp_email_template, get_password_reset_template
+from utils.email_templates import get_otp_email_template, get_password_reset_template
+from utils.brevo_email import send_email
 import random
 import logging
 
@@ -123,7 +124,7 @@ def send_signup_otp(request: SendOtpRequest, db: Session = Depends(get_db)):
     plain_body = f"Your SmartLearn AI verification code is:\n\n{otp}\n\nThis code expires in 5 minutes."
     html_body = get_otp_email_template(otp)
     
-    if not send_email(email, subject, plain_body, html_body):
+    if not send_email(email, subject, html_body):
         logger.error(f"Failed to send email to {email}")
         raise HTTPException(status_code=500, detail="Failed to send verification email")
         
@@ -214,7 +215,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     plain_body = f"Your SmartLearn AI password reset code is:\n\n{otp}\n\nThis code expires in 5 minutes."
     html_body = get_password_reset_template(otp)
     
-    if not send_email(email, subject, plain_body, html_body):
+    if not send_email(email, subject, html_body):
         logger.error(f"Failed to send email to {email}")
         # In a real scenario, we might want to return error here, but to avoid enumeration?
         # If email sending fails, it's a server error.
