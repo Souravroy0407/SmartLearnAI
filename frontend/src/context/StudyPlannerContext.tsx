@@ -59,8 +59,8 @@ interface StudyPlannerContextType {
     setSelectedDate: (date: Date) => void;
     refreshData: () => Promise<void>;
     refreshGoals: () => Promise<void>;
-    refreshTasks: () => Promise<void>;
-    refreshAll: () => Promise<void>;
+    refreshTasks: () => Promise<StudyTask[]>;
+    refreshAll: () => Promise<StudyTask[]>;
     ensureDataLoaded: () => Promise<void>;
     // Optimistic Update Helpers
     updateTask: (updatedTask: StudyTask) => void;
@@ -163,8 +163,8 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const refreshTasks = async () => {
-        if (!user) return;
+    const refreshTasks = async (): Promise<StudyTask[]> => {
+        if (!user) return [];
         try {
             const response = await api.get('/api/study-planner/tasks');
             const newTasks = response.data.map((t: any) => ({
@@ -183,23 +183,27 @@ export const StudyPlannerProvider = ({ children }: { children: ReactNode }) => {
             }));
             setAllTasks(newTasks);
             calculateCalendarRange(newTasks);
+            return newTasks;
         } catch (error) {
             console.error("Failed to fetch tasks:", error);
             setAllTasks([]);
+            return [];
         }
     };
 
-    const refreshAll = async () => {
-        if (!user) return;
+    const refreshAll = async (): Promise<StudyTask[]> => {
+        if (!user) return [];
         setIsLoading(true);
         try {
-            await Promise.all([
+            const [tasks] = await Promise.all([
                 refreshTasks(),
                 refreshGoals()
             ]);
             setIsLoaded(true);
+            return tasks;
         } catch (error) {
             console.error("Error fetching study planner data:", error);
+            return [];
         } finally {
             setIsLoading(false);
         }
