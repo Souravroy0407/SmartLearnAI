@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from database import Base
@@ -121,7 +121,7 @@ class QuizAttempt(Base):
 # ===================== QUESTIONS =====================
 
 class Question(Base):
-    __tablename__ = "questions"
+    __tablename__ = "quiz_questions"
 
     id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
@@ -133,18 +133,18 @@ class Option(Base):
     __tablename__ = "quiz_options"
 
     id = Column(Integer, primary_key=True, index=True)
-    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("quiz_questions.id"), nullable=False)
     text = Column(String(255), nullable=False)
     is_correct = Column(Integer)
 
 # ===================== STUDENT ANSWERS =====================
 
 class StudentAnswer(Base):
-    __tablename__ = "student_answers"
+    __tablename__ = "quiz_answers"
 
     id = Column(Integer, primary_key=True, index=True)
     attempt_id = Column(Integer, ForeignKey("quiz_attempts.id"), nullable=False)
-    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("quiz_questions.id"), nullable=False)
     selected_option_id = Column(Integer, ForeignKey("quiz_options.id"), nullable=False)
     is_correct = Column(Integer)
 
@@ -209,3 +209,83 @@ class OtpVerification(Base):
     verified = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+# ===================== EXAMS =====================
+
+class Exam(Base):
+    __tablename__ = "exams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255))
+    subject = Column(String(255))
+    instructions = Column(Text)
+    exam_type = Column(String(50))
+    question_format = Column(String(50))
+    question_source = Column(String(50))
+    question_paper_data = Column(LargeBinary)
+    question_paper_mime = Column(String(50))
+    total_marks = Column(Integer)
+    deadline = Column(DateTime(timezone=True))
+    external_link = Column(String(500))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class ExamQuestion(Base):
+    __tablename__ = "exam_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    question_text = Column(Text)
+    marks = Column(Integer)
+    order_no = Column(Integer)
+
+class ExamAssignment(Base):
+    __tablename__ = "exam_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(50))
+    assigned_at = Column(DateTime(timezone=True))
+
+class ExamSubmission(Base):
+    __tablename__ = "exam_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    answer_sheet_data = Column(LargeBinary)
+    answer_sheet_mime = Column(String(50))
+    upload_type = Column(String(50))
+    submitted_at = Column(DateTime(timezone=True))
+
+class ExamEvaluation(Base):
+    __tablename__ = "exam_evaluations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    submission_id = Column(Integer, ForeignKey("exam_submissions.id"), nullable=False)
+    checked_by = Column(String(50))
+    marks = Column(Integer)
+    feedback = Column(Text)
+    is_final = Column(Boolean)
+    checked_at = Column(DateTime(timezone=True))
+
+class ExamReevaluation(Base):
+    __tablename__ = "exam_reevaluations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(Integer, ForeignKey("exam_assignments.id"), nullable=False)
+    reason = Column(Text)
+    requested_at = Column(DateTime(timezone=True))
+    resolved = Column(Boolean)
+
+class ExamEvent(Base):
+    __tablename__ = "exam_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_id = Column(Integer, ForeignKey("exams.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    event_type = Column(String(50))
+    triggered_by = Column(String(50))
+    event_time = Column(DateTime(timezone=True))
