@@ -2,12 +2,122 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
-from models import User, Exam, ExamQuestion
+from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student
 from auth import get_current_user
+from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, TRIGGER_TEACHER
+from utils.brevo_email import send_email
+from utils.email_templates import get_exam_assigned_template
+from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class AssignExamRequest(BaseModel):
+    assign_to_all: bool = False
+    student_ids: List[int] = []
+
+@router.post("/{exam_id}/assign")
+def assign_exam(
+    exam_id: int,
+    request: AssignExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can assign exams")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only assign your own exams")
+
+    student_ids_to_assign = []
+
+    # 3. Determine Students
+    if request.assign_to_all:
+        teacher_profile = current_user.teacher_profile
+        if not teacher_profile:
+             raise HTTPException(status_code=400, detail="Teacher profile not found")
+             
+        # Get all followers
+        followers = db.query(StudentTeacherFollow).filter(StudentTeacherFollow.teacher_id == teacher_profile.id).all()
+        for f in followers:
+             # Get Student object to get User ID
+             student = db.query(Student).filter(Student.id == f.student_id).first()
+             if student:
+                 student_ids_to_assign.append(student.user_id)
+    else:
+        # Validate provided IDs are valid students
+        for uid in request.student_ids:
+             # Verify it's a student
+             stu = db.query(User).filter(User.id == uid, User.role == "student").first()
+             if stu:
+                 student_ids_to_assign.append(uid)
+                 
+    # 4. Filter duplicates (Already assigned)
+    final_list = []
+    for uid in set(student_ids_to_assign):
+        existing = db.query(ExamAssignment).filter(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.student_id == uid
+        ).first()
+        if not existing:
+            final_list.append(uid)
+            
+    if not final_list:
+        return {"status": "success", "message": "No new students to assign (all selected were already assigned)"}
+
+    # 5. Assign, Log, Email
+    assigned_count = 0
+    for uid in final_list:
+        # A. Create Assignment
+        assignment = ExamAssignment(
+            exam_id=exam_id,
+            student_id=uid,
+            status="assigned",
+            assigned_at=datetime.now(timezone.utc)
+        )
+        db.add(assignment)
+        
+        # B. Log Event
+        log_exam_event(
+            db,
+            exam_id=exam_id,
+            student_id=uid,
+            teacher_id=current_user.id,
+            event_type=EVENT_EXAM_ASSIGNED,
+            triggered_by=TRIGGER_TEACHER
+        )
+
+        # C. Send Email
+        student_user = db.query(User).filter(User.id == uid).first()
+        if student_user and student_user.email:
+            subject_line = f"New Exam Assigned: {exam.title}"
+            email_body = get_exam_assigned_template(
+                student_name=student_user.full_name,
+                exam_title=exam.title,
+                subject=exam.subject,
+                deadline=exam.deadline.strftime("%Y-%m-%d %H:%M UTC") if exam.deadline else "No Deadline"
+            )
+            try:
+                send_email(student_user.email, subject_line, email_body)
+            except Exception as e:
+                print(f"Failed to send email to {student_user.email}: {e}")
+        
+        assigned_count += 1
+
+    db.commit()
+    
+    return {
+        "status": "success", 
+        "message": f"Assigned exam to {assigned_count} students",
+        "assigned_count": assigned_count
+    }
 
 @router.post("/", response_model=dict)
 async def create_exam(
