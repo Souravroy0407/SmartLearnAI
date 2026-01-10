@@ -4,13 +4,13 @@ from typing import Optional, List
 import json
 from datetime import datetime, timezone
 from database import get_db
-from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission
+from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission, ExamEvaluation
 from auth import get_current_user
-from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, TRIGGER_TEACHER, TRIGGER_STUDENT
+from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, EVENT_EXAM_CHECKED, TRIGGER_TEACHER, TRIGGER_STUDENT
 import zipfile
 import io
 from utils.brevo_email import send_email
-from utils.email_templates import get_exam_assigned_template
+from utils.email_templates import get_exam_assigned_template, get_exam_checked_template
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -218,6 +218,105 @@ async def submit_exam(
     db.commit()
 
     return {"status": "success", "message": "Exam submitted successfully"}
+
+class EvaluateExamRequest(BaseModel):
+    marks: int
+    feedback: str
+
+@router.post("/{exam_id}/evaluate/{student_id}")
+def evaluate_exam(
+    exam_id: int,
+    student_id: int,
+    request: EvaluateExamRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role (Must be Teacher)
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can evaluate exams")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only evaluate your own exams")
+
+    # 3. Validation: Marks limit
+    if request.marks > exam.total_marks:
+        raise HTTPException(status_code=400, detail=f"Marks cannot exceed total marks ({exam.total_marks})")
+
+    # 4. Validation: Assignment Status (Must be submitted)
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id, 
+        ExamAssignment.student_id == student_id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Student is not assigned to this exam")
+    
+    if assignment.status != "submitted":
+        raise HTTPException(status_code=400, detail="Exam is not submitted by student or already evaluated")
+
+    # 5. Get Submission
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id,
+        ExamSubmission.student_id == student_id
+    ).first()
+    
+    if not submission:
+        # Should not happen if status is submitted, but safe check
+        raise HTTPException(status_code=404, detail="Submission record not found")
+
+    # 6. Check if already evaluated (Double validation)
+    existing_eval = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+    if existing_eval:
+         raise HTTPException(status_code=400, detail="Exam already evaluated")
+
+    # 7. Save Evaluation
+    evaluation = ExamEvaluation(
+        submission_id=submission.id,
+        checked_by="teacher",
+        marks=request.marks,
+        feedback=request.feedback,
+        is_final=True,
+        checked_at=datetime.now(timezone.utc)
+    )
+    db.add(evaluation)
+    
+    # 8. Update Assignment Status
+    assignment.status = "checked"
+    
+    # 9. Log Event
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=student_id,
+        teacher_id=current_user.id,
+        event_type=EVENT_EXAM_CHECKED,
+        triggered_by=TRIGGER_TEACHER
+    )
+
+    # 10. Send Email
+    student_user = db.query(User).filter(User.id == student_id).first()
+    if student_user and student_user.email:
+         email_subject = f"Exam Checked: {exam.title}"
+         email_body = get_exam_checked_template(
+             student_name=student_user.full_name,
+             exam_title=exam.title,
+             marks_obtained=request.marks,
+             total_marks=exam.total_marks,
+             feedback=request.feedback
+         )
+         try:
+             send_email(student_user.email, email_subject, email_body)
+         except Exception as e:
+             # Log but don't fail transaction
+             print(f"Failed to send exam check email: {e}")
+
+    db.commit()
+
+    return {"status": "success", "message": "Exam evaluated successfully"}
 
 @router.post("/", response_model=dict)
 async def create_exam(
