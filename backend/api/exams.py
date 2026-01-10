@@ -4,9 +4,11 @@ from typing import Optional, List
 import json
 from datetime import datetime, timezone
 from database import get_db
-from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student
+from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission
 from auth import get_current_user
-from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, TRIGGER_TEACHER
+from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, TRIGGER_TEACHER, TRIGGER_STUDENT
+import zipfile
+import io
 from utils.brevo_email import send_email
 from utils.email_templates import get_exam_assigned_template
 from pydantic import BaseModel
@@ -118,6 +120,104 @@ def assign_exam(
         "message": f"Assigned exam to {assigned_count} students",
         "assigned_count": assigned_count
     }
+
+@router.post("/{exam_id}/submit")
+async def submit_exam(
+    exam_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role (Must be Student)
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can submit exams")
+
+    # 2. Validation: Exam Existence and Type
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Only "subjective" exams allow file submission. "external" exams are just links (teacher handled?)
+    # or external exams might not have submission here? 
+    # Requirement: "student exam submission for subjective exams".
+    if exam.exam_type != "subjective":
+        raise HTTPException(status_code=400, detail="Submission only allowed for subjective exams")
+
+    # 3. Validation: Deadline
+    now = datetime.now(timezone.utc)
+    if exam.deadline and now > exam.deadline:
+         raise HTTPException(status_code=400, detail="Deadline has passed")
+
+    # 4. Validation: Assignment Status
+    # Must be assigned and NOT already submitted
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id, 
+        ExamAssignment.student_id == current_user.id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=403, detail="You are not assigned to this exam")
+    
+    if assignment.status != "assigned":
+        # Could be "submitted", "checked", etc.
+        raise HTTPException(status_code=400, detail="You have already submitted this exam or it is in a processed state")
+
+    # 5. File Processing
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+        
+    final_data = None
+    mime_type = "application/octet-stream"
+    upload_type = "single"
+
+    try:
+        if len(files) == 1 and files[0].content_type == "application/pdf":
+            # Single PDF
+            final_data = await files[0].read()
+            mime_type = "application/pdf"
+            upload_type = "pdf"
+        else:
+            # Multiple files or Images -> ZIP
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for file in files:
+                    content = await file.read()
+                    # Use filename provided by client
+                    zip_file.writestr(file.filename, content)
+            
+            final_data = zip_buffer.getvalue()
+            mime_type = "application/zip"
+            upload_type = "zip"
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
+
+    # 6. Save Submission
+    submission = ExamSubmission(
+        exam_id=exam_id,
+        student_id=current_user.id,
+        answer_sheet_data=final_data,
+        answer_sheet_mime=mime_type,
+        upload_type=upload_type,
+        submitted_at=now
+    )
+    db.add(submission)
+    
+    # 7. Update Assignment Status
+    assignment.status = "submitted"
+    
+    # 8. Log Event
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=current_user.id,
+        teacher_id=exam.teacher_id,
+        event_type=EVENT_EXAM_SUBMITTED,
+        triggered_by=TRIGGER_STUDENT
+    )
+    
+    db.commit()
+
+    return {"status": "success", "message": "Exam submitted successfully"}
 
 @router.post("/", response_model=dict)
 async def create_exam(
