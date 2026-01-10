@@ -4,13 +4,13 @@ from typing import Optional, List
 import json
 from datetime import datetime, timezone
 from database import get_db
-from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission, ExamEvaluation
+from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission, ExamEvaluation, ExamReevaluation
 from auth import get_current_user
-from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, EVENT_EXAM_CHECKED, TRIGGER_TEACHER, TRIGGER_STUDENT
+from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, EVENT_EXAM_CHECKED, EVENT_REEVAL_REQUESTED, EVENT_EXAM_RE_EVALUATED, TRIGGER_TEACHER, TRIGGER_STUDENT
 import zipfile
 import io
 from utils.brevo_email import send_email
-from utils.email_templates import get_exam_assigned_template, get_exam_checked_template
+from utils.email_templates import get_exam_assigned_template, get_exam_checked_template, get_reeval_completed_template
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -317,6 +317,174 @@ def evaluate_exam(
     db.commit()
 
     return {"status": "success", "message": "Exam evaluated successfully"}
+
+class RequestReevalRequest(BaseModel):
+    reason: str
+
+@router.post("/{exam_id}/request-reeval")
+def request_reevaluation(
+    exam_id: int,
+    request: RequestReevalRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can request re-evaluation")
+
+    # 2. Get Assignment
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.student_id == current_user.id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    # 3. Status must be "checked"
+    if assignment.status != "checked":
+        raise HTTPException(status_code=400, detail="Exam must be checked before re-evaluation request")
+        
+    # 4. Check Duplicate Requests
+    existing_req = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+    if existing_req:
+        raise HTTPException(status_code=400, detail="Re-evaluation already requested")
+
+    # 5. Create Request
+    reeval = ExamReevaluation(
+        assignment_id=assignment.id,
+        reason=request.reason,
+        requested_at=datetime.now(timezone.utc),
+        resolved=False
+    )
+    db.add(reeval)
+    
+    # 6. Update Status
+    assignment.status = "reeval_requested"
+    
+    # 7. Log Event
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=current_user.id,
+        teacher_id=current_user.id, # Triggered by student? Actually current_user is student.
+        # But log_exam_event requires teacher_id.
+        # We need to fetch the exam to get the teacher_id to pass it correctly?
+        # Let's fetch exam.
+        event_type=EVENT_REEVAL_REQUESTED,
+        triggered_by=TRIGGER_STUDENT
+    )
+    # Ah, wait. log_exam_event signature:
+    # log_exam_event(db, exam_id, student_id, teacher_id, event_type, triggered_by)
+    # The student triggers it. But we need teacher_id for the column properly? 
+    # Or does the log function allow nullable teacher_id?
+    # Checking models.py... teacher_id nullable=False in ExamEvent? 
+    # Step 222 snippet: teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # So we MUST provide a valid teacher_id.
+    
+    # Fetch Exam to get teacher_id
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    # Re-call log with correct teacher_id
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=current_user.id,
+        teacher_id=exam.teacher_id,
+        event_type=EVENT_REEVAL_REQUESTED,
+        triggered_by=TRIGGER_STUDENT
+    )
+    
+    db.commit()
+    return {"status": "success", "message": "Re-evaluation requested"}
+
+
+@router.post("/{exam_id}/reevaluate/{student_id}")
+def reevaluate_exam(
+    exam_id: int,
+    student_id: int,
+    request: EvaluateExamRequest, # Re-use Evaluate marks/feedback model
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role (Must be Teacher)
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can re-evaluate exams")
+
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam or exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your exam")
+        
+    if request.marks > exam.total_marks:
+        raise HTTPException(status_code=400, detail=f"Marks cannot exceed total marks ({exam.total_marks})")
+
+    # 2. Get Assignment
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.student_id == student_id
+    ).first()
+    
+    if not assignment or assignment.status != "reeval_requested":
+        raise HTTPException(status_code=400, detail="Re-evaluation not requested for this student")
+
+    # 3. Get Re-evaluation Request
+    reeval_req = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+    if not reeval_req:
+        raise HTTPException(status_code=404, detail="Re-evaluation request record not found")
+
+    # 4. Get Previous Evaluation
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id,
+        ExamSubmission.student_id == student_id
+    ).first()
+    
+    evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+    if not evaluation:
+         raise HTTPException(status_code=404, detail="Original evaluation not found")
+
+    # 5. Update Evaluation
+    evaluation.marks = request.marks
+    evaluation.feedback = request.feedback
+    # Keep checked_by as "teacher" or maybe update it? 
+    # Or maybe create a new evaluation row? 
+    # Requirement: "Update marks and feedback in exam_evaluations" -> implies update existing row.
+    
+    # 6. Resolve Request
+    reeval_req.resolved = True
+    
+    # 7. Update Status
+    assignment.status = "re_evaluated"
+    
+    # 8. Log Event
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=student_id,
+        teacher_id=current_user.id,
+        event_type=EVENT_EXAM_RE_EVALUATED,
+        triggered_by=TRIGGER_TEACHER
+    )
+
+    # 9. Send Email
+    student_user = db.query(User).filter(User.id == student_id).first()
+    if student_user and student_user.email:
+         email_subject = f"Re-evaluation Completed: {exam.title}"
+         email_body = get_reeval_completed_template(
+             student_name=student_user.full_name,
+             exam_title=exam.title,
+             final_marks=request.marks,
+             total_marks=exam.total_marks
+         )
+         try:
+             send_email(student_user.email, email_subject, email_body)
+         except Exception as e:
+             print(f"Failed to send re-eval email: {e}")
+
+    db.commit()
+
+    return {"status": "success", "message": "Re-evaluation completed"}
 
 @router.post("/", response_model=dict)
 async def create_exam(
