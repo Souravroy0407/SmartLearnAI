@@ -786,3 +786,100 @@ def download_exam_paper(
         media_type=exam.question_paper_mime or "application/pdf",
         headers={"Content-Disposition": f'attachment; filename="Exam_{exam.id}_Paper.pdf"'}
     )
+
+
+@router.get("/{exam_id}/submissions", response_model=List[dict])
+def get_exam_submissions(
+    exam_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can view submissions")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view submissions for your own exams")
+
+    # 3. Fetch Data
+    # Get all assignments for this exam
+    assignments = db.query(ExamAssignment).filter(ExamAssignment.exam_id == exam_id).all()
+    
+    results = []
+    for assignment in assignments:
+        student = db.query(User).filter(User.id == assignment.student_id).first()
+        if not student:
+            continue
+            
+        submission = db.query(ExamSubmission).filter(
+            ExamSubmission.exam_id == exam_id,
+            ExamSubmission.student_id == assignment.student_id
+        ).first()
+        
+        evaluation = None
+        if submission:
+             evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+             
+        results.append({
+            "student_id": student.id,
+            "student_name": student.full_name,
+            "student_email": student.email,
+            "status": assignment.status, # assigned, submitted, checked, reeval_requested, re_evaluated
+            "assigned_at": assignment.assigned_at,
+            "submitted_at": submission.submitted_at if submission else None,
+            "marks_obtained": evaluation.marks if evaluation else None,
+            "feedback": evaluation.feedback if evaluation else None,
+            "is_evaluated": evaluation is not None
+        })
+        
+    return results
+
+
+@router.get("/{exam_id}/submissions/{student_id}/download-answer")
+def download_student_answer(
+    exam_id: int,
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can download answer sheets")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only download answers for your own exams")
+
+    # 3. Fetch Submission
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id,
+        ExamSubmission.student_id == student_id
+    ).first()
+    
+    if not submission or not submission.answer_sheet_data:
+        raise HTTPException(status_code=404, detail="Submission or file not found")
+
+    # 4. Determine Filename
+    # Get student name for filename
+    student = db.query(User).filter(User.id == student_id).first()
+    student_name = student.full_name.replace(" ", "_") if student else f"Student_{student_id}"
+    
+    ext = "pdf"
+    if submission.upload_type == "zip" or submission.answer_sheet_mime == "application/zip":
+        ext = "zip"
+        
+    filename = f"Exam_{exam_id}_{student_name}_Answer.{ext}"
+
+    # 5. Return Stream
+    return StreamingResponse(
+        io.BytesIO(submission.answer_sheet_data),
+        media_type=submission.answer_sheet_mime or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )

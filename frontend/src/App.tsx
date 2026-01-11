@@ -24,6 +24,8 @@ import UserManagement from './pages/admin/UserManagement'; // Import User Manage
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
 import CreateExam from './pages/teacher/CreateExam';
 import ExamList from './pages/teacher/ExamList';
+import ExamSubmissions from './pages/teacher/ExamSubmissions';
+import ExamEvaluation from './pages/teacher/ExamEvaluation';
 import TeacherStudentList from './pages/teacher/TeacherStudentList';
 import StudentQuizList from './pages/student/StudentQuizList';
 import Teachers from './pages/student/Teachers';
@@ -83,6 +85,8 @@ function App() {
                                         <Route path="quizzes" element={<QuizManagement />} />
                                         <Route path="exams" element={<ExamList />} />
                                         <Route path="exams/create" element={<CreateExam />} />
+                                        <Route path="exams/:examId/submissions" element={<ExamSubmissions />} />
+                                        <Route path="exams/:examId/evaluate/:studentId" element={<ExamEvaluation />} />
                                         <Route path="exam-checker" element={<ExamChecker />} />
                                     </Route>
                                 </Route>

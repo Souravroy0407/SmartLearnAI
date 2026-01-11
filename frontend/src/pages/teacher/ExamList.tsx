@@ -136,6 +136,13 @@ export default function ExamList() {
                                 {/* Actions */}
                                 <div className="flex items-center gap-3 w-full md:w-auto mt-2 md:mt-0">
                                     <button
+                                        onClick={() => navigate(`${exam.id}/submissions`)}
+                                        className="px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-200 transition-all flex items-center gap-2 active:scale-95"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Submissions
+                                    </button>
+                                    <button
                                         onClick={() => setAssignModalExam(exam)}
                                         className="flex-1 md:flex-none px-5 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-all shadow-lg shadow-gray-200 hover:shadow-gray-300 flex items-center justify-center gap-2 active:scale-95"
                                     >
