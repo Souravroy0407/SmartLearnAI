@@ -46,6 +46,44 @@ def list_exams(
     return results
 
 
+@router.get("/my-exams", response_model=List[dict])
+def get_student_my_exams(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can view their assigned exams")
+
+    # 2. Fetch Assignments for this student
+    assignments = db.query(ExamAssignment).filter(
+        ExamAssignment.student_id == current_user.id
+    ).order_by(ExamAssignment.assigned_at.desc()).all()
+    
+    results = []
+    for assignment in assignments:
+        # 3. Fetch Exam Details
+        exam = db.query(Exam).filter(Exam.id == assignment.exam_id).first()
+        if exam:
+            results.append({
+                "id": exam.id,
+                "title": exam.title,
+                "subject": exam.subject,
+                "exam_type": exam.exam_type, # subjective, external
+                "total_marks": exam.total_marks,
+                "deadline": exam.deadline,
+                "instructions": exam.instructions,
+                "status": assignment.status, # assigned, submitted, checked, reeval_requested, re_evaluated
+                "assigned_at": assignment.assigned_at,
+                "submitted_at": None, # Could fetch from submission if needed, but status is primary
+                # If we need marks/feedback:
+                # "marks_obtained": ... (requires fetching evaluation)
+            })
+    
+    return results
+
+
+
 @router.get("/{exam_id}/assignments", response_model=List[int])
 def get_exam_assignments(
     exam_id: int,
@@ -653,3 +691,98 @@ async def create_exam(
     db.refresh(new_exam)
     
     return {"status": "success", "exam_id": new_exam.id, "message": "Exam created successfully"}
+
+
+@router.get("/{exam_id}/student-access")
+def get_student_exam_details(
+    exam_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can access this endpoint")
+
+    # 2. Check Assignment
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.student_id == current_user.id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=403, detail="You are not assigned to this exam")
+
+    # 3. Get Exam
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    # 4. Construct Response
+    # If text format, include questions
+    questions = []
+    if exam.question_format == "text":
+        qs = db.query(ExamQuestion).filter(ExamQuestion.exam_id == exam_id).order_by(ExamQuestion.order_no).all()
+        questions = [
+            {
+                "id": q.id,
+                "question_text": q.question_text,
+                "marks": q.marks,
+                "order_no": q.order_no
+            }
+            for q in qs
+        ]
+
+    return {
+        "id": exam.id,
+        "title": exam.title,
+        "subject": exam.subject,
+        "instructions": exam.instructions,
+        "total_marks": exam.total_marks,
+        "deadline": exam.deadline,
+        "exam_type": exam.exam_type,
+        "question_format": exam.question_format,
+        "external_link": exam.external_link,
+        "status": assignment.status,
+        "questions": questions
+    }
+
+
+from fastapi.responses import StreamingResponse
+
+@router.get("/{exam_id}/download-paper")
+def download_exam_paper(
+    exam_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    # Allow both student (assigned) and teacher (owner)
+    
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user.role == "student":
+         # Check assignment
+         assignment = db.query(ExamAssignment).filter(
+            ExamAssignment.exam_id == exam_id,
+            ExamAssignment.student_id == current_user.id
+         ).first()
+         if not assignment:
+             raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "teacher":
+        if exam.teacher_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        # Admin or others?
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not exam.question_paper_data:
+        raise HTTPException(status_code=404, detail="No question paper file found")
+
+    # Return stream
+    return StreamingResponse(
+        io.BytesIO(exam.question_paper_data),
+        media_type=exam.question_paper_mime or "application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="Exam_{exam.id}_Paper.pdf"'}
+    )

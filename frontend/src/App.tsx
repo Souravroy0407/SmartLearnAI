@@ -27,9 +27,10 @@ import ExamList from './pages/teacher/ExamList';
 import TeacherStudentList from './pages/teacher/TeacherStudentList';
 import StudentQuizList from './pages/student/StudentQuizList';
 import Teachers from './pages/student/Teachers';
-
+import StudentExams from './pages/student/StudentExams';
 import QuizActive from './pages/student/QuizActive';
 import QuizResult from './pages/student/QuizResult';
+import StudentExamDetail from './pages/student/StudentExamDetail';
 
 
 function App() {
@@ -55,6 +56,8 @@ function App() {
                                             <Route path="teachers" element={<Teachers />} />
                                             <Route path="doubt-solver" element={<DoubtSolver />} />
                                             <Route path="student-quizzes" element={<StudentQuizList />} />
+                                            <Route path="student-exams" element={<StudentExams />} />
+                                            <Route path="student-exams/:examId" element={<StudentExamDetail />} />
                                             <Route path="student-quiz-result/:quizId" element={<QuizResult />} />
                                         </Route>
                                         {/* Analytics is open to all dashboard users */}
