@@ -18,6 +18,7 @@ interface Submission {
     submitted_at: string | null;
     marks_obtained: number | null;
     is_evaluated: boolean;
+    reeval_reason?: string;
 }
 
 interface ExamDetails {
@@ -180,7 +181,8 @@ export default function ExamSubmissions() {
                                                     className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-gray-800 transition-all shadow-md active:scale-95"
                                                 >
                                                     <PenTool className="w-4 h-4" />
-                                                    {sub.status === 'submitted' ? 'Evaluate' : 'View'}
+                                                    {sub.status === 'submitted' ? 'Evaluate' :
+                                                        sub.status === 'reeval_requested' ? 'Re-evaluate' : 'View'}
                                                 </button>
                                             )}
                                         </td>

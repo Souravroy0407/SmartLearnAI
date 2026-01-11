@@ -25,6 +25,9 @@ interface ExamDetail {
     external_link: string | null;
     status: string;
     questions?: Question[];
+    marks_obtained?: number;
+    feedback?: string;
+    reeval_reason?: string;
 }
 
 const StudentExamDetail = () => {
@@ -35,6 +38,11 @@ const StudentExamDetail = () => {
     const [error, setError] = useState<string | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
     const [submitting, setSubmitting] = useState(false);
+
+    // Re-evaluation State
+    const [showReevalModal, setShowReevalModal] = useState(false);
+    const [reevalReason, setReevalReason] = useState('');
+    const [reevalSubmitting, setReevalSubmitting] = useState(false);
 
     useEffect(() => {
         fetchExamDetails();
@@ -111,6 +119,29 @@ const StudentExamDetail = () => {
         }
     };
 
+    const handleReevalRequest = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!reevalReason.trim()) return;
+
+        setReevalSubmitting(true);
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/request-reeval`,
+                { reason: reevalReason },
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+            setReevalSubmitting(false);
+            setShowReevalModal(false);
+            fetchExamDetails();
+        } catch (err: any) {
+            console.error("Error requesting re-evaluation:", err);
+            alert(err.response?.data?.detail || "Failed to request re-evaluation");
+            setReevalSubmitting(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full min-h-[400px]">
@@ -165,16 +196,106 @@ const StudentExamDetail = () => {
                     </div>
                 </div>
                 <div>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium border
+                    <span className={`px-3 py-1 rounded-full text-sm font-bold border capitalize
                         ${exam.status === 'assigned' ? "bg-blue-50 text-blue-700 border-blue-200" :
-                            exam.status === 'submitted' ? "bg-green-50 text-green-700 border-green-200" :
-                                "bg-purple-50 text-purple-700 border-purple-200"
+                            exam.status === 'submitted' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                exam.status === 'checked' ? "bg-green-50 text-green-700 border-green-200" :
+                                    exam.status === 'reeval_requested' ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                        "bg-blue-50 text-blue-700 border-blue-200" // re_evaluated
                         }`}
                     >
-                        {exam.status.replace('_', ' ').toUpperCase()}
+                        {exam.status.replace('_', ' ')}
                     </span>
                 </div>
             </div>
+
+            {/* Evaluation Results Section */}
+            {['checked', 'reeval_requested', 're_evaluated'].includes(exam.status) && (
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="flex flex-col md:flex-row gap-6 md:items-start justify-between">
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-1">
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                                {exam.status === 're_evaluated' ? "Re-evaluation Results" : "Exam Results"}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                                {exam.status === 'reeval_requested'
+                                    ? "You have requested a re-evaluation. Results will update once reviewed."
+                                    : "Your exam has been checked by the teacher."}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {exam.status === 'checked' && (
+                                <button
+                                    onClick={() => setShowReevalModal(true)}
+                                    className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
+                                >
+                                    Request Re-evaluation
+                                </button>
+                            )}
+                            <div className="text-right bg-gray-50 px-6 py-3 rounded-xl border border-gray-100">
+                                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Marks Obtained</p>
+                                <p className="text-3xl font-bold text-gray-900">
+                                    {exam.marks_obtained} <span className="text-lg text-gray-400 font-normal">/ {exam.total_marks}</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    {exam.feedback && (
+                        <div className="mt-6 pt-6 border-t border-gray-100">
+                            <h4 className="text-sm font-bold text-gray-900 mb-2">Teacher Feedback</h4>
+                            <p className="text-gray-700 bg-gray-50 p-4 rounded-xl text-sm leading-relaxed border border-gray-100">
+                                {exam.feedback}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Re-evaluation Modal */}
+            {showReevalModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Request Re-evaluation</h3>
+                        <p className="text-sm text-gray-500 mb-6">
+                            Please provide a reason for your request. The teacher will review your submission again.
+                        </p>
+                        <form onSubmit={handleReevalRequest}>
+                            <textarea
+                                value={reevalReason}
+                                onChange={(e) => setReevalReason(e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none resize-none mb-6"
+                                placeholder="E.g., Question 3 was marked incorrectly..."
+                                rows={4}
+                                required
+                            />
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowReevalModal(false)}
+                                    className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={reevalSubmitting || !reevalReason.trim()}
+                                    className="px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    {reevalSubmitting ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Sending...
+                                        </>
+                                    ) : (
+                                        "Submit Request"
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left Column: Exam Content */}

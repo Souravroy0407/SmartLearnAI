@@ -743,8 +743,78 @@ def get_student_exam_details(
         "question_format": exam.question_format,
         "external_link": exam.external_link,
         "status": assignment.status,
-        "questions": questions
+        "questions": questions,
+        # Evaluation Data
+        "marks_obtained": None,
+        "feedback": None,
+        "reeval_reason": None
     }
+
+    # Fetch Evaluation if available
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id,
+        ExamSubmission.student_id == current_user.id
+    ).first()
+
+    if submission:
+        evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+        if evaluation:
+            # We construct a response with these extra fields
+            return {
+                "id": exam.id,
+                "title": exam.title,
+                "subject": exam.subject,
+                "instructions": exam.instructions,
+                "total_marks": exam.total_marks,
+                "deadline": exam.deadline,
+                "exam_type": exam.exam_type,
+                "question_format": exam.question_format,
+                "external_link": exam.external_link,
+                "status": assignment.status,
+                "questions": questions,
+                "marks_obtained": evaluation.marks,
+                "feedback": evaluation.feedback,
+                "reeval_reason": None # Will fetch if needed
+            }
+            
+    # Check for Re-eval reason if requested
+    if assignment.status in ["reeval_requested", "re_evaluated"]:
+        reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+        if reeval:
+            # We need to return the dict with this updated
+            # Ideally we construct the dict once at the end
+             pass
+
+    # Let's cleanly construct the dict at the end
+    result = {
+        "id": exam.id,
+        "title": exam.title,
+        "subject": exam.subject,
+        "instructions": exam.instructions,
+        "total_marks": exam.total_marks,
+        "deadline": exam.deadline,
+        "exam_type": exam.exam_type,
+        "question_format": exam.question_format,
+        "external_link": exam.external_link,
+        "status": assignment.status,
+        "questions": questions,
+        "marks_obtained": None,
+        "feedback": None,
+        "reeval_reason": None
+    }
+
+    if submission:
+        evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+        if evaluation:
+            result["marks_obtained"] = evaluation.marks
+            result["feedback"] = evaluation.feedback
+    
+    if assignment.status in ["reeval_requested", "re_evaluated"]:
+         reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+         if reeval:
+             result["reeval_reason"] = reeval.reason
+             
+    return result
 
 
 from fastapi.responses import StreamingResponse
@@ -833,8 +903,15 @@ def get_exam_submissions(
             "submitted_at": submission.submitted_at if submission else None,
             "marks_obtained": evaluation.marks if evaluation else None,
             "feedback": evaluation.feedback if evaluation else None,
-            "is_evaluated": evaluation is not None
+            "is_evaluated": evaluation is not None,
+            # Re-evaluation Data
+            "reeval_reason": None
         })
+
+        if assignment.status in ["reeval_requested", "re_evaluated"]:
+             reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+             if reeval:
+                 results[-1]["reeval_reason"] = reeval.reason
         
     return results
 

@@ -94,10 +94,19 @@ export default function ExamEvaluation() {
                 throw new Error(`Marks must be between 0 and ${data.exam.total_marks}`);
             }
 
-            await axios.post(`/api/exams/${examId}/evaluate/${studentId}`, {
-                marks: marksInt,
-                feedback: feedback
-            });
+            if (data.submission.status === 'reeval_requested') {
+                // Re-evaluation Endpoint
+                await axios.post(`/api/exams/${examId}/reevaluate/${studentId}`, {
+                    marks: marksInt,
+                    feedback: feedback
+                });
+            } else {
+                // Standard Evaluation Endpoint
+                await axios.post(`/api/exams/${examId}/evaluate/${studentId}`, {
+                    marks: marksInt,
+                    feedback: feedback
+                });
+            }
 
             setSuccess(true);
             // Reload to update status
@@ -120,7 +129,7 @@ export default function ExamEvaluation() {
 
     if (!data) return <div className="p-10 text-center">Data not found</div>;
 
-    const isReadOnly = data.submission.status !== 'submitted';
+    const isReadOnly = data.submission.status !== 'submitted' && data.submission.status !== 'reeval_requested';
 
     return (
         <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -138,13 +147,26 @@ export default function ExamEvaluation() {
                 <div className="flex items-center gap-4">
                     <div className="text-right">
                         <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">Status</div>
-                        <div className={`font-bold ${data.submission.status === 'checked' ? 'text-green-600' : 'text-amber-600'
+                        <div className={`font-bold ${data.submission.status === 'checked' ? 'text-green-600' :
+                            data.submission.status === 'reeval_requested' ? 'text-purple-600' :
+                                'text-amber-600'
                             }`}>
                             {data.submission.status.replace('_', ' ').toUpperCase()}
                         </div>
                     </div>
                 </div>
             </header>
+
+            {/* Re-evaluation Request Banner */}
+            {data.submission.reeval_reason && (
+                <div className="bg-purple-50 px-6 py-3 border-b border-purple-100 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-purple-600 mt-0.5 shrink-0" />
+                    <div>
+                        <h3 className="font-bold text-purple-900 text-sm">Re-evaluation Request</h3>
+                        <p className="text-purple-700 text-sm mt-1">{data.submission.reeval_reason}</p>
+                    </div>
+                </div>
+            )}
 
             {/* Main Content - Split Screen */}
             <div className="flex-1 flex overflow-hidden">
@@ -257,7 +279,7 @@ export default function ExamEvaluation() {
                                 ) : (
                                     <>
                                         <Save className="w-5 h-5" />
-                                        Submit Evaluation
+                                        {data.submission.status === 'reeval_requested' ? "Submit Re-evaluation" : "Submit Evaluation"}
                                     </>
                                 )}
                             </button>
