@@ -13,6 +13,7 @@ const TeacherSidebar = ({ isOpen, onClose }: SidebarProps) => {
 
         // { icon: BookOpen, label: 'Exam Checker', path: '/teacher/exam-checker' },
         { icon: Settings, label: 'Quiz Management', path: '/teacher/quizzes' },
+        { icon: BookOpen, label: 'Exams', path: '/teacher/exams' },
         { icon: Users, label: 'Students', path: '/teacher/students' },
     ];
 
