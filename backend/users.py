@@ -438,6 +438,7 @@ def get_teacher_students(
             if user:
                 results.append({
                     "student_id": student.id,
+                    "user_id": user.id,  # Added user_id for exam assignment
                     "full_name": student.full_name,
                     "username": user.email.split('@')[0], # Fallback usage or specific logic
                     "email": user.email,

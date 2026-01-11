@@ -20,6 +20,56 @@ class AssignExamRequest(BaseModel):
     assign_to_all: bool = False
     student_ids: List[int] = []
 
+@router.get("/", response_model=List[dict])
+def list_exams(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != "teacher":
+         raise HTTPException(status_code=403, detail="Only teachers can list their exams")
+
+    exams = db.query(Exam).filter(Exam.teacher_id == current_user.id).order_by(Exam.created_at.desc()).all()
+    
+    results = []
+    for exam in exams:
+        results.append({
+            "id": exam.id,
+            "title": exam.title,
+            "subject": exam.subject,
+            "exam_type": exam.exam_type,
+            "total_marks": exam.total_marks,
+            "deadline": exam.deadline,
+            "created_at": exam.created_at,
+            "question_format": exam.question_format,
+            "external_link": exam.external_link
+        })
+    return results
+
+
+@router.get("/{exam_id}/assignments", response_model=List[int])
+def get_exam_assignments(
+    exam_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can view assignments")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view assignments for your own exams")
+
+    # 3. Fetch Assignments
+    assignments = db.query(ExamAssignment).filter(ExamAssignment.exam_id == exam_id).all()
+    
+    # Return list of student IDs (User IDs)
+    return [a.student_id for a in assignments]
+
+
 @router.post("/{exam_id}/assign")
 def assign_exam(
     exam_id: int,

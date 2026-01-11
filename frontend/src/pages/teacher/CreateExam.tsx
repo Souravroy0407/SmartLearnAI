@@ -116,7 +116,7 @@ export default function CreateExam() {
 
             // Redirect after short delay
             setTimeout(() => {
-                navigate('/teacher/exams'); // Or dashboard if no list page exists yet
+                navigate('/teacher/exams');
             }, 1500);
 
         } catch (error: any) {
