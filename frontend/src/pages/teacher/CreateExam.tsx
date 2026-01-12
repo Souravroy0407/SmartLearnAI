@@ -267,26 +267,48 @@ export default function CreateExam() {
 
                                 {/* PDF Upload */}
                                 {questionFormat === 'pdf' && (
-                                    <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 hover:bg-gray-50 hover:border-primary/50 transition-all text-center group cursor-pointer relative">
-                                        <input
-                                            type="file"
-                                            accept="application/pdf"
-                                            onChange={handleFileChange}
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
-                                        />
-                                        <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                                            <Upload className="w-8 h-8" />
-                                        </div>
-                                        {file ? (
-                                            <div>
-                                                <p className="font-bold text-gray-800 text-lg">{file.name}</p>
-                                                <p className="text-gray-500 text-sm">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                                                <p className="text-green-500 text-sm font-bold mt-2">Ready to upload</p>
+                                    <div className="space-y-4">
+                                        {!file ? (
+                                            <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 hover:bg-gray-50 hover:border-primary/50 transition-all text-center group cursor-pointer relative">
+                                                <input
+                                                    type="file"
+                                                    accept="application/pdf"
+                                                    onChange={handleFileChange}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                                />
+                                                <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                                                    <Upload className="w-8 h-8" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-gray-800 text-lg">Click to Upload Question Paper</p>
+                                                    <p className="text-gray-500">PDF files only, max 10MB</p>
+                                                </div>
                                             </div>
                                         ) : (
-                                            <div>
-                                                <p className="font-bold text-gray-800 text-lg">Click to Upload Question Paper</p>
-                                                <p className="text-gray-500">PDF files only, max 10MB</p>
+                                            <div className="bg-white border-2 border-primary/20 p-4 rounded-2xl flex items-center justify-between shadow-sm group">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-12 h-12 bg-red-50 text-red-500 rounded-xl flex items-center justify-center">
+                                                        <FileText className="w-6 h-6" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-gray-800 text-sm line-clamp-1 break-all">{file.name}</p>
+                                                        <p className="text-gray-500 text-xs font-medium">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFile(null)}
+                                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                    title="Remove file"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        )}
+                                        {file && (
+                                            <div className="flex items-center gap-2 text-green-600 bg-green-50 px-4 py-2 rounded-xl text-sm font-bold w-fit">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                Ready to upload on Save
                                             </div>
                                         )}
                                     </div>

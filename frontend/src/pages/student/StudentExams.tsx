@@ -42,6 +42,7 @@ interface Exam {
     instructions: string | null;
     status: string;
     assigned_at: string;
+    marks_obtained?: number;
 }
 
 const StudentExams = () => {
@@ -113,6 +114,7 @@ const StudentExams = () => {
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Exam Title</th>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Deadline</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                                 </tr>
                             </thead>
@@ -152,6 +154,15 @@ const StudentExams = () => {
                                                     <span className="text-gray-400">No Deadline</span>
                                                 )}
                                             </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {exam.marks_obtained !== undefined && exam.marks_obtained !== null ? (
+                                                <span className="font-bold text-gray-900">
+                                                    {exam.marks_obtained} <span className="text-gray-400 font-normal">/ {exam.total_marks}</span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">-</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4">
                                             <StatusBadge status={exam.status} />

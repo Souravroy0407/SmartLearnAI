@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
     FileText, Calendar, Clock, AlertCircle, Upload, CheckCircle,
-    Download, ChevronLeft
+    Download, ChevronLeft, X
 } from 'lucide-react';
 
 interface Question {
@@ -36,8 +36,9 @@ const StudentExamDetail = () => {
     const [exam, setExam] = useState<ExamDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const [downloadingPaper, setDownloadingPaper] = useState(false);
 
     // Re-evaluation State
     const [showReevalModal, setShowReevalModal] = useState(false);
@@ -65,6 +66,7 @@ const StudentExamDetail = () => {
 
     const handleDownloadPaper = async () => {
         try {
+            setDownloadingPaper(true);
             const token = localStorage.getItem('token');
             const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/download-paper`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -82,24 +84,35 @@ const StudentExamDetail = () => {
         } catch (err) {
             console.error("Error downloading paper:", err);
             alert("Failed to download question paper");
+        } finally {
+            setDownloadingPaper(false);
         }
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            setSelectedFiles(e.target.files);
+            // Append new files to existing ones
+            const newFiles = Array.from(e.target.files);
+            setSelectedFiles(prev => [...prev, ...newFiles]);
+
+            // Reset input value to allow re-selecting the same file if needed
+            e.target.value = '';
         }
+    };
+
+    const removeFile = (index: number) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedFiles || !exam) return;
+        if (selectedFiles.length === 0 || !exam) return;
 
         setSubmitting(true);
         const formData = new FormData();
-        for (let i = 0; i < selectedFiles.length; i++) {
-            formData.append('files', selectedFiles[i]);
-        }
+        selectedFiles.forEach(file => {
+            formData.append('files', file);
+        });
 
         try {
             const token = localStorage.getItem('token');
@@ -326,7 +339,8 @@ const StudentExamDetail = () => {
                                     onClick={handleDownloadPaper}
                                     className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
                                 >
-                                    <Download className="w-4 h-4" /> Download Question Paper
+                                    <Download className={`w-4 h-4 ${downloadingPaper ? 'animate-bounce' : ''}`} />
+                                    {downloadingPaper ? "Downloading..." : "Download Question Paper"}
                                 </button>
                             </div>
                         ) : exam.questions && exam.questions.length > 0 ? (
@@ -369,7 +383,7 @@ const StudentExamDetail = () => {
                                 </div>
                             ) : (
                                 <form onSubmit={handleSubmit} className="space-y-4">
-                                    <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-center cursor-pointer relative">
+                                    <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-center cursor-pointer relative group">
                                         <input
                                             type="file"
                                             multiple
@@ -378,20 +392,37 @@ const StudentExamDetail = () => {
                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         />
                                         <div className="flex flex-col items-center justify-center py-4">
-                                            <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                                            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                                                <Upload className="w-5 h-5 text-gray-500" />
+                                            </div>
                                             <p className="text-sm font-medium text-gray-900">
-                                                {selectedFiles ? `${selectedFiles.length} file(s) selected` : "Click to upload answers"}
+                                                Click to select files
                                             </p>
                                             <p className="text-xs text-gray-500 mt-1">PDF or Images accepted</p>
                                         </div>
                                     </div>
 
-                                    {selectedFiles && (
+                                    {selectedFiles.length > 0 && (
                                         <div className="space-y-2">
-                                            {Array.from(selectedFiles).map((file, idx) => (
-                                                <div key={idx} className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                                                    <FileText className="w-4 h-4" />
-                                                    <span className="truncate">{file.name}</span>
+                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Selected Files ({selectedFiles.length})</p>
+                                            {selectedFiles.map((file, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-100 rounded-xl group/item hover:bg-white hover:shadow-sm transition-all">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                                                            <FileText className="w-4 h-4" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
+                                                            <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFile(idx)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
@@ -399,8 +430,8 @@ const StudentExamDetail = () => {
 
                                     <button
                                         type="submit"
-                                        disabled={!selectedFiles || submitting}
-                                        className="w-full py-2.5 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                                        disabled={selectedFiles.length === 0 || submitting}
+                                        className="w-full py-3 px-4 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 active:translate-y-0.5"
                                     >
                                         {submitting ? (
                                             <>

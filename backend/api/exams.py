@@ -11,7 +11,9 @@ import zipfile
 import io
 from utils.brevo_email import send_email
 from utils.email_templates import get_exam_assigned_template, get_exam_checked_template, get_reeval_completed_template
+
 from pydantic import BaseModel
+from PIL import Image as PILImage
 
 router = APIRouter()
 
@@ -75,10 +77,24 @@ def get_student_my_exams(
                 "instructions": exam.instructions,
                 "status": assignment.status, # assigned, submitted, checked, reeval_requested, re_evaluated
                 "assigned_at": assignment.assigned_at,
-                "submitted_at": None, # Could fetch from submission if needed, but status is primary
-                # If we need marks/feedback:
-                # "marks_obtained": ... (requires fetching evaluation)
+                "submitted_at": None, 
+                "marks_obtained": None
             })
+            
+            # Fetch submission/evaluation if available
+            if assignment.status in ["submitted", "checked", "reeval_requested", "re_evaluated"]:
+                # Find submission
+                submission = db.query(ExamSubmission).filter(
+                    ExamSubmission.exam_id == exam.id,
+                    ExamSubmission.student_id == current_user.id
+                ).first()
+                if submission:
+                    results[-1]["submitted_at"] = submission.submitted_at
+                     # Find evaluation if checked/reeval
+                    if assignment.status in ["checked", "reeval_requested", "re_evaluated"]:
+                        evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+                        if evaluation:
+                             results[-1]["marks_obtained"] = evaluation.marks
     
     return results
 
@@ -192,7 +208,9 @@ def assign_exam(
                 student_name=student_user.full_name,
                 exam_title=exam.title,
                 subject=exam.subject,
-                deadline=exam.deadline.strftime("%Y-%m-%d %H:%M UTC") if exam.deadline else "No Deadline"
+                deadline=exam.deadline.strftime("%Y-%m-%d %H:%M UTC") if exam.deadline else "No Deadline",
+                teacher_name=current_user.full_name,
+                total_marks=exam.total_marks
             )
             try:
                 send_email(student_user.email, subject_line, email_body)
@@ -255,29 +273,54 @@ async def submit_exam(
         raise HTTPException(status_code=400, detail="No files uploaded")
         
     final_data = None
-    mime_type = "application/octet-stream"
-    upload_type = "single"
+    mime_type = "application/pdf"
+    upload_type = "pdf"
 
     try:
+        # Check if first file is PDF (Single PDF Submission)
         if len(files) == 1 and files[0].content_type == "application/pdf":
-            # Single PDF
             final_data = await files[0].read()
-            mime_type = "application/pdf"
-            upload_type = "pdf"
         else:
-            # Multiple files or Images -> ZIP
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                for file in files:
-                    content = await file.read()
-                    # Use filename provided by client
-                    zip_file.writestr(file.filename, content)
+            # Multiple files or Images -> Convert to Single PDF
+            images = []
+            for file in files:
+                content = await file.read()
+                # Verify it's an image
+                if not file.content_type.startswith("image/"):
+                    # If we have mixed PDF + Images, or Text, that's complex. 
+                    # Requirement says "If multiple images... Convert to SINGLE PDF".
+                    # Let's reject non-images for multi-upload for now to be safe.
+                    raise HTTPException(status_code=400, detail=f"File {file.filename} is not an image. Only Images or a single PDF are allowed.")
+                
+                try:
+                    img = PILImage.open(io.BytesIO(content))
+                    # Convert to RGB (handle RGBA/P palette issues for PDF)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images.append(img)
+                except Exception as e:
+                    raise HTTPException(status_code=400, detail=f"Invalid image file {file.filename}")
+
+            if not images:
+                 raise HTTPException(status_code=400, detail="No valid images found to convert")
+
+            # Save to PDF
+            pdf_buffer = io.BytesIO()
+            # save_all=True saves all images in list to the PDF
+            images[0].save(
+                pdf_buffer, 
+                "PDF", 
+                resolution=100.0, 
+                save_all=True, 
+                append_images=images[1:]
+            )
+            final_data = pdf_buffer.getvalue()
             
-            final_data = zip_buffer.getvalue()
-            mime_type = "application/zip"
-            upload_type = "zip"
+    except HTTPException:
+        raise
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
+         print(f"File processing error: {e}")
+         raise HTTPException(status_code=500, detail="Failed to process files. Ensure you are uploading valid PDFs or Images.")
 
     # 6. Save Submission
     submission = ExamSubmission(
@@ -732,7 +775,7 @@ def get_student_exam_details(
             for q in qs
         ]
 
-    return {
+    final_response = {
         "id": exam.id,
         "title": exam.title,
         "subject": exam.subject,
@@ -744,77 +787,31 @@ def get_student_exam_details(
         "external_link": exam.external_link,
         "status": assignment.status,
         "questions": questions,
-        # Evaluation Data
         "marks_obtained": None,
         "feedback": None,
-        "reeval_reason": None
+        "reeval_reason": None,
+        "submitted_at": None
     }
 
-    # Fetch Evaluation if available
+    # Fetch Submission
     submission = db.query(ExamSubmission).filter(
         ExamSubmission.exam_id == exam_id,
         ExamSubmission.student_id == current_user.id
     ).first()
 
     if submission:
+        final_response["submitted_at"] = submission.submitted_at
         evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
         if evaluation:
-            # We construct a response with these extra fields
-            return {
-                "id": exam.id,
-                "title": exam.title,
-                "subject": exam.subject,
-                "instructions": exam.instructions,
-                "total_marks": exam.total_marks,
-                "deadline": exam.deadline,
-                "exam_type": exam.exam_type,
-                "question_format": exam.question_format,
-                "external_link": exam.external_link,
-                "status": assignment.status,
-                "questions": questions,
-                "marks_obtained": evaluation.marks,
-                "feedback": evaluation.feedback,
-                "reeval_reason": None # Will fetch if needed
-            }
-            
-    # Check for Re-eval reason if requested
-    if assignment.status in ["reeval_requested", "re_evaluated"]:
-        reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
-        if reeval:
-            # We need to return the dict with this updated
-            # Ideally we construct the dict once at the end
-             pass
-
-    # Let's cleanly construct the dict at the end
-    result = {
-        "id": exam.id,
-        "title": exam.title,
-        "subject": exam.subject,
-        "instructions": exam.instructions,
-        "total_marks": exam.total_marks,
-        "deadline": exam.deadline,
-        "exam_type": exam.exam_type,
-        "question_format": exam.question_format,
-        "external_link": exam.external_link,
-        "status": assignment.status,
-        "questions": questions,
-        "marks_obtained": None,
-        "feedback": None,
-        "reeval_reason": None
-    }
-
-    if submission:
-        evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
-        if evaluation:
-            result["marks_obtained"] = evaluation.marks
-            result["feedback"] = evaluation.feedback
+            final_response["marks_obtained"] = evaluation.marks
+            final_response["feedback"] = evaluation.feedback
     
     if assignment.status in ["reeval_requested", "re_evaluated"]:
          reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
          if reeval:
-             result["reeval_reason"] = reeval.reason
+             final_response["reeval_reason"] = reeval.reason
              
-    return result
+    return final_response
 
 
 from fastapi.responses import StreamingResponse
@@ -822,6 +819,7 @@ from fastapi.responses import StreamingResponse
 @router.get("/{exam_id}/download-paper")
 def download_exam_paper(
     exam_id: int,
+    disposition: str = "inline", # inline or attachment
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -851,11 +849,24 @@ def download_exam_paper(
         raise HTTPException(status_code=404, detail="No question paper file found")
 
     # Return stream
+    # Ensure PDF mime type (if we are confident it is PDF, otherwise trust DB)
+    media_type = exam.question_paper_mime or "application/pdf"
+    
+    # Check for "disposition" query param? Not standard in FastAPI to read param in signature unless defined
+    # Let's add it to signature if we want to support it, or just default to inline now.
+    # Frontend wants Preview (inline) and Download (attachment).
+    # Since we can't easily change signature w/o breaking potential callers? 
+    # Actually we can add optional param.
     return StreamingResponse(
         io.BytesIO(exam.question_paper_data),
-        media_type=exam.question_paper_mime or "application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="Exam_{exam.id}_Paper.pdf"'}
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="Exam_{exam.id}_Paper.pdf"'
+        }
     )
+
+
+
 
 
 @router.get("/{exam_id}/submissions", response_model=List[dict])
@@ -920,6 +931,7 @@ def get_exam_submissions(
 def download_student_answer(
     exam_id: int,
     student_id: int,
+    disposition: str = "inline",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -948,15 +960,95 @@ def download_student_answer(
     student = db.query(User).filter(User.id == student_id).first()
     student_name = student.full_name.replace(" ", "_") if student else f"Student_{student_id}"
     
+    # Force PDF extension logic if we converted everything?
+    # Old data might be ZIP. We need to handle that.
     ext = "pdf"
-    if submission.upload_type == "zip" or submission.answer_sheet_mime == "application/zip":
+    mime = submission.answer_sheet_mime or "application/pdf"
+    
+    if submission.upload_type == "zip" or mime == "application/zip":
         ext = "zip"
-        
+    
     filename = f"Exam_{exam_id}_{student_name}_Answer.{ext}"
 
     # 5. Return Stream
     return StreamingResponse(
         io.BytesIO(submission.answer_sheet_data),
-        media_type=submission.answer_sheet_mime or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        media_type=mime,
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'}
     )
+
+@router.get("/{exam_id}/evaluation/{student_id}")
+def get_evaluation_metadata(
+    exam_id: int,
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Optimized endpoint for Teacher Evaluation Page.
+    Returns only metadata, avoiding heavy file payloads.
+    """
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can access evaluation data")
+
+    # 2. Get Exam & Check Ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 3. Get Student Name
+    student = db.query(User).filter(User.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # 4. Get Submission
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id, 
+        ExamSubmission.student_id == student_id
+    ).first()
+
+    if not submission:
+        # If no submission exists, return 404 cleanly
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # 5. Get Assignment (Source of Truth for Status)
+    assignment = db.query(ExamAssignment).filter(
+        ExamAssignment.exam_id == exam_id,
+        ExamAssignment.student_id == student_id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment record not found")
+
+    # 6. Get Evaluation & Re-evaluation info
+    evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+    
+    reeval_reason = None
+    # Check for re-eval request
+    reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
+    if reeval:
+         reeval_reason = reeval.reason
+
+    return {
+        "exam": {
+            "id": exam.id,
+            "title": exam.title,
+            "total_marks": exam.total_marks,
+            "question_format": exam.question_format,
+            "has_question_paper": bool(exam.question_paper_data)
+        },
+        "submission": {
+            "student_name": student.full_name,
+            "submitted_at": submission.submitted_at,
+            "status": assignment.status, # CORRECT: Use Assignment status
+            "has_answer_sheet": bool(submission.answer_sheet_data),
+            "reeval_reason": reeval_reason
+        },
+        "evaluation": {
+            "marks": evaluation.marks if evaluation else None,
+            "feedback": evaluation.feedback if evaluation else None
+        }
+    }

@@ -228,7 +228,7 @@ def get_password_reset_template(otp_code: str) -> str:
     </html>
     """
 
-def get_exam_assigned_template(student_name: str, exam_title: str, subject: str, deadline: str) -> str:
+def get_exam_assigned_template(student_name: str, exam_title: str, subject: str, deadline: str, teacher_name: str, total_marks: int) -> str:
     """
     Returns a professional HTML email template for Exam Assignment.
     """
@@ -256,7 +256,7 @@ def get_exam_assigned_template(student_name: str, exam_title: str, subject: str,
                 overflow: hidden;
             }}
             .header {{
-                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
                 padding: 32px 24px;
                 text-align: center;
             }}
@@ -284,29 +284,29 @@ def get_exam_assigned_template(student_name: str, exam_title: str, subject: str,
                 margin-bottom: 24px;
                 text-align: center;
             }}
-            .exam-details {{
-                background-color: #f8fafc;
-                border: 1px solid #e2e8f0;
+            .detail-card {{
+                background-color: #eff6ff;
+                border: 1px solid #dbeafe;
                 border-radius: 8px;
-                padding: 20px;
-                margin-bottom: 32px;
+                padding: 24px;
+                margin-bottom: 24px;
             }}
-            .detail-row {{
+            .info-row {{
                 display: flex;
                 justify-content: space-between;
                 margin-bottom: 12px;
                 font-size: 14px;
             }}
-            .detail-row:last-child {{
+            .info-row:last-child {{
                 margin-bottom: 0;
             }}
-            .detail-label {{
+            .info-label {{
                 color: #64748b;
-                font-weight: 500;
-            }}
-            .detail-value {{
-                color: #0f172a;
                 font-weight: 600;
+            }}
+            .info-value {{
+                color: #1e40af;
+                font-weight: 700;
                 text-align: right;
             }}
             .footer {{
@@ -331,22 +331,28 @@ def get_exam_assigned_template(student_name: str, exam_title: str, subject: str,
             <div class="content">
                 <h2 class="title">New Exam Assigned</h2>
                 <p class="message">
-                    Hello {student_name}, a new exam has been assigned to you. Please check the details below and ensure you submit it before the deadline.
+                    Hi {student_name}, your teacher <strong>{teacher_name}</strong> has assigned a new exam for you.
                 </p>
-                <div class="exam-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Exam Title</span>
-                        <span class="detail-value">{exam_title}</span>
+                
+                <div class="detail-card">
+                    <div class="info-row">
+                        <span class="info-label">Exam Title: </span>
+                        <span class="info-value">{exam_title}</span>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Subject</span>
-                        <span class="detail-value">{subject}</span>
+                    <div class="info-row">
+                        <span class="info-label">Subject: </span>
+                        <span class="info-value">{subject}</span>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Deadline</span>
-                        <span class="detail-value">{deadline}</span>
+                    <div class="info-row">
+                        <span class="info-label">Total Marks: </span>
+                        <span class="info-value">{total_marks} Marks</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Deadline: </span>
+                        <span class="info-value">{deadline}</span>
                     </div>
                 </div>
+
                 <div style="text-align: center;">
                     <a href="#" style="background-color: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">View Exam</a>
                 </div>
