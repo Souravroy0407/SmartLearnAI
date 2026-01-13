@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../../api/axios';
 import {
     FileText, Calendar, Clock, AlertCircle, Upload, CheckCircle,
     Download, ChevronLeft, X, Eye
@@ -51,10 +51,7 @@ const StudentExamDetail = () => {
 
     const fetchExamDetails = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/student-access`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/api/exams/${examId}/student-access`);
             setExam(response.data);
             setLoading(false);
         } catch (err: any) {
@@ -67,9 +64,7 @@ const StudentExamDetail = () => {
     const handleDownloadPaper = async () => {
         try {
             setDownloadingPaper(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/download-paper`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const response = await api.get(`/api/exams/${examId}/download-paper`, {
                 responseType: 'blob'
             });
 
@@ -116,10 +111,8 @@ const StudentExamDetail = () => {
         });
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/submit`, formData, {
+            await api.post(`/api/exams/${examId}/submit`, formData, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'multipart/form-data'
                 }
             });
@@ -148,12 +141,9 @@ const StudentExamDetail = () => {
 
         setReevalSubmitting(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/exams/${examId}/request-reeval`,
-                { reason: reevalReason },
-                {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+            await api.post(`/api/exams/${examId}/request-reeval`,
+                { reason: reevalReason }
+            );
 
             setReevalSubmitting(false);
             setShowReevalModal(false);

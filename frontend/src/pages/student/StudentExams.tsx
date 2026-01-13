@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, Calendar, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import api from '../../api/axios';
 
 // Badge Components
 const StatusBadge = ({ status }: { status: string }) => {
@@ -56,10 +56,7 @@ const StudentExams = () => {
 
     const fetchExams = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/exams/my-exams`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get('/api/exams/my-exams');
             setExams(response.data);
             setLoading(false);
         } catch (err) {

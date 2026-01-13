@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, Search, RefreshCw, X, GraduationCap, Calendar, Mail } from 'lucide-react';
-import axios from '../../api/axios';
+import axios, { API_BASE_URL } from '../../api/axios';
 
 interface Student {
     student_id: number;
@@ -166,7 +166,7 @@ const TeacherStudentList = () => {
                                         <div className="flex items-center gap-4 overflow-hidden">
                                             {student.avatar_url ? (
                                                 <img
-                                                    src={`${import.meta.env.VITE_API_BASE_URL}${student.avatar_url}`}
+                                                    src={`${API_BASE_URL}${student.avatar_url}`}
                                                     alt={student.full_name}
                                                     className="w-10 h-10 rounded-xl object-cover border border-gray-100"
                                                     onError={(e) => {
