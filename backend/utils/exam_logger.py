@@ -8,6 +8,7 @@ EVENT_EXAM_SUBMITTED = "exam_submitted"
 EVENT_EXAM_CHECKED = "exam_checked"
 EVENT_REEVAL_REQUESTED = "reeval_requested"
 EVENT_EXAM_RE_EVALUATED = "exam_re_evaluated"
+EVENT_DEADLINE_UPDATED = "deadline_updated"
 
 # Allowed Triggered By
 TRIGGER_STUDENT = "student"

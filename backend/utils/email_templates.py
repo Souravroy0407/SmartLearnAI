@@ -651,3 +651,129 @@ def get_reeval_completed_template(student_name: str, exam_title: str, final_mark
     </html>
     """
 
+def get_exam_deadline_updated_template(student_name: str, exam_title: str, new_deadline: str, teacher_name: str) -> str:
+    """
+    Returns a professional HTML email template for Exam Deadline Update.
+    """
+    current_year = datetime.now().year
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Exam Deadline Updated</title>
+        <style>
+            body {{
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                background-color: #f4f4f5;
+                margin: 0;
+                padding: 0;
+            }}
+            .container {{
+                max-width: 480px;
+                margin: 40px auto;
+                background-color: #ffffff;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #c026d3 0%, #a21caf 100%);
+                padding: 32px 24px;
+                text-align: center;
+            }}
+            .header h1 {{
+                color: #ffffff;
+                margin: 0;
+                font-size: 24px;
+                font-weight: 700;
+                letter-spacing: -0.5px;
+            }}
+            .content {{
+                padding: 40px 32px;
+            }}
+            .title {{
+                color: #18181b;
+                font-size: 20px;
+                font-weight: 600;
+                margin-bottom: 16px;
+                text-align: center;
+            }}
+            .message {{
+                color: #52525b;
+                font-size: 16px;
+                line-height: 1.5;
+                margin-bottom: 24px;
+                text-align: center;
+            }}
+            .detail-card {{
+                background-color: #fdf4ff;
+                border: 1px solid #f0abfc;
+                border-radius: 8px;
+                padding: 24px;
+                margin-bottom: 24px;
+            }}
+            .info-row {{
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 12px;
+                font-size: 14px;
+            }}
+            .info-row:last-child {{
+                margin-bottom: 0;
+            }}
+            .info-label {{
+                color: #701a75;
+                font-weight: 600;
+            }}
+            .info-value {{
+                color: #86198f;
+                font-weight: 700;
+                text-align: right;
+            }}
+            .footer {{
+                background-color: #f8fafc;
+                padding: 24px;
+                text-align: center;
+                border-top: 1px solid #e2e8f0;
+            }}
+            .footer p {{
+                color: #94a3b8;
+                font-size: 12px;
+                margin: 0;
+                line-height: 1.5;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>SmartLearn AI</h1>
+            </div>
+            <div class="content">
+                <h2 class="title">Exam Deadline Updated</h2>
+                <p class="message">
+                    Hi {student_name}, the deadline for "<strong>{exam_title}</strong>" has been updated by <strong>{teacher_name}</strong>.
+                </p>
+                
+                <div class="detail-card">
+                    <div class="info-row">
+                        <span class="info-label">New Deadline: </span>
+                        <span class="info-value">{new_deadline}</span>
+                    </div>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="#" style="background-color: #c026d3; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">View Exam</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>&copy; {current_year} SmartLearn AI. All rights reserved.</p>
+                <p>This is an automated message, please do not reply.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+

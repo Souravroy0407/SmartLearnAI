@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from database import get_db
 from models import User, Exam, ExamQuestion, ExamAssignment, StudentTeacherFollow, Student, ExamSubmission, ExamEvaluation, ExamReevaluation
 from auth import get_current_user
-from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, EVENT_EXAM_CHECKED, EVENT_REEVAL_REQUESTED, EVENT_EXAM_RE_EVALUATED, TRIGGER_TEACHER, TRIGGER_STUDENT
+from utils.exam_logger import log_exam_event, EVENT_EXAM_ASSIGNED, EVENT_EXAM_SUBMITTED, EVENT_EXAM_CHECKED, EVENT_REEVAL_REQUESTED, EVENT_EXAM_RE_EVALUATED, EVENT_DEADLINE_UPDATED, TRIGGER_TEACHER, TRIGGER_STUDENT
 import zipfile
 import io
 from utils.brevo_email import send_email
-from utils.email_templates import get_exam_assigned_template, get_exam_checked_template, get_reeval_completed_template
+from utils.email_templates import get_exam_assigned_template, get_exam_checked_template, get_reeval_completed_template, get_exam_deadline_updated_template
 
 from pydantic import BaseModel
 from PIL import Image as PILImage
@@ -21,6 +21,9 @@ router = APIRouter()
 class AssignExamRequest(BaseModel):
     assign_to_all: bool = False
     student_ids: List[int] = []
+
+class UpdateDeadlineRequest(BaseModel):
+    new_deadline: str # ISO format
 
 @router.get("/", response_model=List[dict])
 def list_exams(
@@ -826,6 +829,79 @@ def get_student_exam_details(
 
 
 from fastapi.responses import StreamingResponse
+
+
+@router.patch("/{exam_id}/deadline")
+def update_exam_deadline(
+    exam_id: int,
+    request: UpdateDeadlineRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Role
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can update deadlines")
+
+    # 2. Validation: Exam ownership
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    if exam.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only update your own exams")
+
+    # 3. Validation: Deadline (Future or Current)
+    try:
+        deadline_dt = datetime.fromisoformat(request.new_deadline.replace('Z', '+00:00'))
+        if deadline_dt.tzinfo is None:
+            deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+            
+        if deadline_dt < datetime.now(timezone.utc):
+             raise HTTPException(status_code=400, detail="New deadline must be in the future")
+             
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deadline format")
+
+    # 4. Update Exam
+    old_deadline = exam.deadline
+    exam.deadline = deadline_dt
+    
+    # 5. Log Event
+    log_exam_event(
+        db,
+        exam_id=exam_id,
+        student_id=current_user.id, # Using teacher ID as placeholder
+        teacher_id=current_user.id,
+        event_type=EVENT_DEADLINE_UPDATED,
+        triggered_by=TRIGGER_TEACHER
+    )
+    
+    # 6. Notify Students
+    assignments = db.query(ExamAssignment).filter(ExamAssignment.exam_id == exam_id).all()
+    count = 0
+    
+    formatted_deadline = deadline_dt.astimezone().strftime("%b %d, %I:%M %p")
+    
+    for assignment in assignments:
+        student_user = db.query(User).filter(User.id == assignment.student_id).first()
+        if student_user and student_user.email:
+             # Send Email
+             subject_line = f"Exam Deadline Updated: {exam.title}"
+             email_body = get_exam_deadline_updated_template(
+                 student_name=student_user.full_name,
+                 exam_title=exam.title,
+                 new_deadline=formatted_deadline,
+                 teacher_name=current_user.full_name
+             )
+             try:
+                 send_email(student_user.email, subject_line, email_body)
+                 count += 1
+             except Exception:
+                 pass
+                 
+    db.commit()
+    
+    return {"status": "success", "message": f"Deadline updated and {count} students notified"}
+
 
 @router.get("/{exam_id}/download-paper")
 def download_exam_paper(

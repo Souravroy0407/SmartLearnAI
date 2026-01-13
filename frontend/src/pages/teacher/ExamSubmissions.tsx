@@ -5,9 +5,13 @@ import {
     CheckCircle2,
     Clock,
     ArrowLeft,
-    PenTool
+    PenTool,
+    Calendar,
+    X,
+    Save
 } from 'lucide-react';
 import axios from '../../api/axios';
+import Toast, { type ToastType } from '../../components/Toast';
 
 interface Submission {
     student_id: number;
@@ -26,6 +30,7 @@ interface ExamDetails {
     title: string;
     subject: string;
     total_marks: number;
+    deadline: string; // Added deadline
 }
 
 export default function ExamSubmissions() {
@@ -36,6 +41,12 @@ export default function ExamSubmissions() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
 
+    // Edit Deadline State
+    const [isEditDeadlineOpen, setIsEditDeadlineOpen] = useState(false);
+    const [newDeadline, setNewDeadline] = useState('');
+    const [updatingDeadline, setUpdatingDeadline] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
     useEffect(() => {
         if (examId) {
             fetchData();
@@ -44,24 +55,8 @@ export default function ExamSubmissions() {
 
     const fetchData = async () => {
         try {
-            // Parallel fetch
             const [examRes, subsRes] = await Promise.all([
-                // We don't have a direct "get exam details" for teacher except via list?
-                // Or we can assume we might need one. 
-                // Actually teacher has list logic. 
-                // Let's assume we can get exam details from list or fetch specifically.
-                // Ideally we should have GET /api/exams/{id} for teacher.
-                // Currently exams.py has list_exams and get_student_exam_details.
-                // We might miss a detailed single exam fetch for teacher.
-                // BUT, we can filter from full list or just fetch submissions and maybe exam details are not crucial or we add an endpoint.
-                // Let's check exams.py again.
-                // There isn't a single "get exam" for teacher. 
-                // I can add one or just use the submissions endpoint and maybe include exam title?
-                // Or just assume the user knows context.
-                // Better UX: Show Exam Title.
-                // I can add a small endpoint or just update submissions to return exam info wrapper.
-                // Or fetch list and find.
-                axios.get('/api/exams/'),
+                axios.get('/api/exams/'), // This returns list of exams
                 axios.get(`/api/exams/${examId}/submissions`)
             ]);
 
@@ -69,10 +64,55 @@ export default function ExamSubmissions() {
             setExam(foundExam || null);
             setSubmissions(subsRes.data);
 
+            // Initialize newDeadline if exam found
+            if (foundExam && foundExam.deadline) {
+                // Convert UTC string to local datetime-local format
+                // API returns ISO string "2023-10-27T10:00:00+00:00" or similar
+                // Input expected format: "YYYY-MM-DDTHH:mm"
+                const date = new Date(foundExam.deadline);
+                // Adjust to local time string for input
+                // We need 'YYYY-MM-DDTHH:mm' in local time
+                const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+                setNewDeadline(localIso);
+            }
+
         } catch (error) {
             console.error("Failed to fetch data", error);
+            setToast({ message: "Failed to load exam data", type: "error" });
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleUpdateDeadline = async () => {
+        if (!exam) return;
+
+        try {
+            setUpdatingDeadline(true);
+            // newDeadline is from input type="datetime-local", so it is local time string
+            // We can send it as ISO string. Backend handles it.
+            // But verify it is future
+            if (new Date(newDeadline) < new Date()) {
+                setToast({ message: "Deadline must be in the future", type: "error" });
+                setUpdatingDeadline(false);
+                return;
+            }
+
+            await axios.patch(`/api/exams/${exam.id}/deadline`, {
+                new_deadline: new Date(newDeadline).toISOString()
+            });
+
+            setToast({ message: "Deadline updated successfully", type: "success" });
+            setIsEditDeadlineOpen(false);
+
+            // Update local state
+            setExam(prev => prev ? { ...prev, deadline: new Date(newDeadline).toISOString() } : null);
+
+        } catch (error: any) {
+            console.error("Failed to update deadline", error);
+            setToast({ message: error.response?.data?.detail || "Failed to update deadline", type: "error" });
+        } finally {
+            setUpdatingDeadline(false);
         }
     };
 
@@ -92,7 +132,15 @@ export default function ExamSubmissions() {
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 relative">
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
+
             {/* Header */}
             <div className="flex flex-col gap-4">
                 <button
@@ -111,6 +159,15 @@ export default function ExamSubmissions() {
                             {exam ? `${exam.subject} • ${exam.total_marks} Marks` : 'Manage student submissions'}
                         </p>
                     </div>
+                    {exam && (
+                        <button
+                            onClick={() => setIsEditDeadlineOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm font-medium"
+                        >
+                            <Calendar className="w-4 h-4" />
+                            Edit Deadline
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -200,6 +257,61 @@ export default function ExamSubmissions() {
                     )}
                 </div>
             </div>
+
+            {/* Edit Deadline Modal */}
+            {isEditDeadlineOpen && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl transform transition-all">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-900">Edit Exam Deadline</h2>
+                            <button onClick={() => setIsEditDeadlineOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">New Deadline</label>
+                                <input
+                                    type="datetime-local"
+                                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none font-medium"
+                                    value={newDeadline}
+                                    onChange={(e) => setNewDeadline(e.target.value)}
+                                />
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Students will be notified via email about this change.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setIsEditDeadlineOpen(false)}
+                                    className="flex-1 py-3 text-gray-600 font-bold bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleUpdateDeadline}
+                                    disabled={updatingDeadline}
+                                    className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {updatingDeadline ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Updating...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="w-4 h-4" />
+                                            Save Changes
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

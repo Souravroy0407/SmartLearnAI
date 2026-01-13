@@ -124,12 +124,15 @@ const StudentExamDetail = () => {
                 }
             });
 
-            // For external exams, optimize UX by updating state without waiting for re-fetch
-            if (exam.exam_type === 'external') {
-                setExam(prev => prev ? { ...prev, status: 'submitted' } : null);
-                // Keep submitting true to prevent button flicker/enable
-            } else {
-                setSubmitting(false);
+            // Optimistic UI update: Immediately mark as submitted upon success
+            setExam(prev => prev ? { ...prev, status: 'submitted' } : null);
+
+            // Do NOT call setSubmitting(false) here - this prevents the button from
+            // re-enabling/flickering before the "Submitted" view renders.
+
+            // For subjective exams, we still fetch details to sync with server,
+            // but the UI is already in the correct state.
+            if (exam.exam_type !== 'external') {
                 fetchExamDetails();
             }
         } catch (err: any) {
