@@ -14,6 +14,12 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+    const getCacheBustedUrl = (url: string) => {
+        const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+        const separator = fullUrl.includes('?') ? '&' : '?';
+        return `${fullUrl}${separator}cb=${Date.now()}`;
+    };
+
     // Edit Form State
     const [editName, setEditName] = useState('');
     const [editUsername, setEditUsername] = useState(''); // Added username state
@@ -229,7 +235,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                                 {user?.avatar_url ? (
                                     <img
-                                        src={user.avatar_url.startsWith('http') ? user.avatar_url : `${API_BASE_URL}${user.avatar_url}`}
+                                        src={getCacheBustedUrl(user.avatar_url)}
                                         alt="Profile"
                                         className="w-full h-full object-cover"
                                     />
@@ -280,7 +286,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                     <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
                                         {editAvatarUrl ? (
                                             <img
-                                                src={editAvatarUrl.startsWith('http') ? editAvatarUrl : `${API_BASE_URL}${editAvatarUrl}`}
+                                                src={getCacheBustedUrl(editAvatarUrl)}
                                                 alt="Preview"
                                                 className="w-full h-full object-cover"
                                             />

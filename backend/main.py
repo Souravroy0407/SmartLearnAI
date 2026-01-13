@@ -31,8 +31,9 @@ origins = [
     "http://localhost:5173",
     "https://localhost:5173",
     "https://192.168.1.101:5173",
-    "https://smartlearnai-frontend.netlify.app",
-    "https://smartlearnai-frontend.netlify.app/",
+    "https://www.smartlearnai.online",
+    "https://smartlearnai01.netlify.app",
+    "https://smartlearnai01.netlify.app/",
     "*", # Allow all for simplicity during dev, but explicit above is better for credentials
 ]
 
