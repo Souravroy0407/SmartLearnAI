@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api, { API_BASE_URL } from '../api/axios';
 import Cropper from 'react-easy-crop';
@@ -90,7 +90,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
         }
     };
 
-    const handleCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+    const handleCropComplete = (_croppedArea: any, croppedAreaPixels: any) => {
         setCroppedAreaPixels(croppedAreaPixels);
     };
 
@@ -119,7 +119,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
             const formData = new FormData();
             formData.append('file', croppedImageBlob, 'avatar.jpg');
 
-            const token = localStorage.getItem('token');
+            // const token = localStorage.getItem('token'); // Removed unused
             const response = await api.post('/api/users/upload-avatar', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
@@ -236,7 +236,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                                 {user?.avatar_url ? (
                                     <img
-                                        src={user.id ? `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}` : user.avatar_url || ''}
+                                        src={user.avatar_url?.startsWith('http') ? user.avatar_url : `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}`}
                                         alt="Profile"
                                         className="w-full h-full object-cover"
                                     />
@@ -287,7 +287,7 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                     <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
                                         {editAvatarUrl ? (
                                             <img
-                                                src={user?.id ? `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}` : editAvatarUrl}
+                                                src={editAvatarUrl?.startsWith('http') ? editAvatarUrl : `${API_BASE_URL}/api/users/${user?.id}/avatar?v=${avatarKey}`}
                                                 alt="Preview"
                                                 className="w-full h-full object-cover"
                                             />
