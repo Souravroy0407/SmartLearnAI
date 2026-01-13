@@ -5,6 +5,7 @@ import { jwtDecode } from 'jwt-decode';
 interface User {
     email: string;
     role: 'student' | 'teacher' | 'admin';
+    id?: number;
     full_name: string;
     username?: string; // Added username (optional as it might not be relevant for all roles initially or during transition)
     avatar_url?: string;
@@ -48,6 +49,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         setUser({
                             email: decoded.sub,
                             role: decoded.role || 'student',
+                            id: decoded.id, // Assuming token might have it, or we rely on profile fetch
                             full_name: decoded.full_name || 'User',
                             avatar_url: decoded.avatar_url
                         });
@@ -95,6 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setUser({
                 email: decoded.sub,
                 role: decoded.role || 'student',
+                id: decoded.id,
                 full_name: decoded.full_name || 'User',
                 avatar_url: decoded.avatar_url
             });
