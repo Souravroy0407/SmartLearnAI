@@ -190,3 +190,80 @@ def generate_tasks(
         print(f"Task Generation Failed: {e}")
         db.rollback() 
         raise HTTPException(status_code=500, detail="Task Generation Failed")
+
+
+# --- Exam Question Generation ---
+
+# Configure Gemini (Re-using env var but local config for this module if needed, 
+# though genai.configure is global usually. Safe to call again or rely on main/chat)
+GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GENAI_API_KEY:
+    import google.generativeai as genai
+    genai.configure(api_key=GENAI_API_KEY)
+
+class GenerateQuestionsRequest(BaseModel):
+    topic: str
+    difficulty: str  # Easy, Medium, Hard
+    count: int
+    marks_per_question: int
+
+class GeneratedQuestion(BaseModel):
+    question_text: str
+    marks: int
+
+@router.post("/generate-exam-questions", response_model=List[GeneratedQuestion])
+def generate_exam_questions(
+    request: GenerateQuestionsRequest,
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Validation
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can generate exam questions")
+
+    if not GENAI_API_KEY:
+        raise HTTPException(status_code=503, detail="AI Service unavailable (API Key missing)")
+
+    if request.count > 20:
+         raise HTTPException(status_code=400, detail="Max 20 questions allowed at once")
+
+    # 2. Prompt Engineering
+    prompt = f"""
+    You are an expert teacher's assistant.
+    Generate {request.count} subjective exam questions on the topic: "{request.topic}".
+    Difficulty Level: {request.difficulty}.
+    Default Marks per question: {request.marks_per_question}.
+
+    Return ONLY a raw JSON array of objects. Do not include markdown formatting (like ```json).
+    Each object must have:
+    - "question_text": The question string.
+    - "marks": Integer.
+
+    Example Format:
+    [
+        {{"question_text": "Explain Newton's First Law.", "marks": 5}},
+        {{"question_text": "Calculate the force...", "marks": 5}}
+    ]
+    """
+
+    try:
+        model = genai.GenerativeModel('gemini-flash-latest')
+        response = model.generate_content(prompt)
+        
+        # Clean response text (remove backticks if AI adds them despite instructions)
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        import json
+        data = json.loads(text.strip())
+        
+        return data
+
+    except Exception as e:
+        print(f"AI Question Generation Error: {e}")
+        # Build fallback/mock response or error? Error is better to notify user.
+        raise HTTPException(status_code=500, detail="Failed to generate questions. Please try again.")

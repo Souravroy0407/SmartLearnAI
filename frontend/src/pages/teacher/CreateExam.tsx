@@ -10,7 +10,9 @@ import {
     CheckCircle2,
     AlertCircle,
     Save,
-    ArrowLeft
+    ArrowLeft,
+    Sparkles,
+    X
 } from 'lucide-react';
 import axios from '../../api/axios';
 import Toast, { type ToastType } from '../../components/Toast';
@@ -33,6 +35,49 @@ export default function CreateExam() {
     const [questions, setQuestions] = useState<{ text: string; marks: number }[]>([
         { text: '', marks: 5 }
     ]);
+
+    // AI Modal State
+    const [showAIModal, setShowAIModal] = useState(false);
+    const [aiTopic, setAiTopic] = useState('');
+    const [aiDifficulty, setAiDifficulty] = useState('Medium');
+    const [aiCount, setAiCount] = useState(3);
+    const [aiMarks, setAiMarks] = useState(5);
+    const [aiLoading, setAiLoading] = useState(false);
+
+    // Handlers
+    const handleGenerateAI = async () => {
+        setAiLoading(true);
+        try {
+            const res = await axios.post('/api/ai/generate-exam-questions', {
+                topic: aiTopic,
+                difficulty: aiDifficulty,
+                count: aiCount,
+                marks_per_question: aiMarks
+            });
+
+            // Append Generated Questions
+            const newQuestions = res.data.map((q: any) => ({
+                text: q.question_text,
+                marks: q.marks
+            }));
+
+            // If only one question and it's empty, replace it. Otherwise append.
+            if (questions.length === 1 && questions[0].text === '') {
+                setQuestions(newQuestions);
+            } else {
+                setQuestions([...questions, ...newQuestions]);
+            }
+
+            setShowAIModal(false);
+            setToast({ message: "Questions generated successfully!", type: "success" });
+
+        } catch (error) {
+            console.error(error);
+            setToast({ message: "Failed to generate questions. Try again.", type: "error" });
+        } finally {
+            setAiLoading(false);
+        }
+    };
 
     // Handlers
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -317,16 +362,28 @@ export default function CreateExam() {
                                 {/* Manual Questions */}
                                 {questionFormat === 'text' && (
                                     <div className="space-y-4">
+                                        {/* AI Generator Button */}
+                                        <div className="flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowAIModal(true)}
+                                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300 hover:-translate-y-0.5 transition-all text-sm"
+                                            >
+                                                <Sparkles className="w-4 h-4" />
+                                                Generate with AI
+                                            </button>
+                                        </div>
+
                                         {questions.map((q, idx) => (
                                             <div key={idx} className="flex gap-4 items-start group">
                                                 <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500 mt-2">
                                                     {idx + 1}
                                                 </div>
                                                 <div className="flex-1 space-y-2">
-                                                    <input
+                                                    <textarea
                                                         value={q.text}
                                                         onChange={e => handleQuestionChange(idx, 'text', e.target.value)}
-                                                        className="w-full px-4 py-2 rounded-xl bg-gray-50 border border-transparent focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+                                                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-transparent focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none min-h-[80px] resize-none"
                                                         placeholder="Enter question text..."
                                                     />
                                                     <div className="flex items-center gap-2">
@@ -354,7 +411,7 @@ export default function CreateExam() {
                                             className="w-full py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-500 font-bold hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
                                         >
                                             <Plus className="w-5 h-5" />
-                                            Add Another Question
+                                            Add Manual Question
                                         </button>
                                     </div>
                                 )}
@@ -424,6 +481,93 @@ export default function CreateExam() {
                     </div>
                 </div>
             </form>
+
+            {/* AI Generator Modal */}
+            {showAIModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-indigo-600" />
+                                Generate Questions
+                            </h3>
+                            <button
+                                onClick={() => setShowAIModal(false)}
+                                className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-bold text-gray-600 ml-1">Topic / Syllabus</label>
+                                <textarea
+                                    value={aiTopic}
+                                    onChange={e => setAiTopic(e.target.value)}
+                                    placeholder="e.g. Thermodynamics, Shakespeare's Hamlet, World War II..."
+                                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none min-h-[100px] resize-none"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-bold text-gray-600 ml-1">Difficulty</label>
+                                    <select
+                                        value={aiDifficulty}
+                                        onChange={e => setAiDifficulty(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none appearance-none"
+                                    >
+                                        <option value="Easy">Easy</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="Hard">Hard</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-bold text-gray-600 ml-1">Count</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={20}
+                                        value={aiCount}
+                                        onChange={e => setAiCount(Number(e.target.value))}
+                                        className="w-full px-4 py-3 rounded-xl bg-gray-50 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-bold text-gray-600 ml-1">Default Marks</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={aiMarks}
+                                    onChange={e => setAiMarks(Number(e.target.value))}
+                                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none"
+                                />
+                            </div>
+
+                            <button
+                                onClick={handleGenerateAI}
+                                disabled={aiLoading || !aiTopic.trim()}
+                                className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-70 disabled:pointer-events-none flex items-center justify-center gap-2"
+                            >
+                                {aiLoading ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Generating...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-5 h-5" />
+                                        Generate Questions
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {toast && (
                 <Toast
