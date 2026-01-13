@@ -253,9 +253,27 @@ export default function ExamEvaluation() {
                                                     </button>
                                                 </div>
                                             )
+                                        ) : data.exam.questions && data.exam.questions.length > 0 ? (
+                                            <div className="w-full space-y-4 p-6">
+                                                {data.exam.questions.map((q: any) => (
+                                                    <div key={q.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex gap-4">
+                                                        <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center font-bold text-gray-700 text-sm">
+                                                            Q{q.order_no}
+                                                        </div>
+                                                        <div className="flex-grow">
+                                                            <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{q.question_text}</p>
+                                                            <div className="mt-2 flex items-center gap-2">
+                                                                <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded border border-gray-200">
+                                                                    {q.marks} Marks
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         ) : (
-                                            <div className="p-8 w-full prose max-w-none text-gray-600">
-                                                <p>Questions are text-based. (Preview not implemented)</p>
+                                            <div className="p-8 w-full prose max-w-none text-gray-500 italic text-center">
+                                                <p>No questions found for this exam.</p>
                                             </div>
                                         )}
                                     </div>

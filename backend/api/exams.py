@@ -1051,7 +1051,11 @@ def get_evaluation_metadata(
             "question_format": exam.question_format,
             "has_question_paper": bool(exam.question_paper_data),
             "exam_type": exam.exam_type,
-            "external_link": exam.external_link
+            "external_link": exam.external_link,
+            "questions": [
+                {"id": q.id, "order_no": q.order_no, "question_text": q.question_text, "marks": q.marks}
+                for q in db.query(ExamQuestion).filter(ExamQuestion.exam_id == exam.id).order_by(ExamQuestion.order_no).all()
+            ] if exam.question_format == "text" else []
         },
         "submission": {
             "student_name": student.full_name,
