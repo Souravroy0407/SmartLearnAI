@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
     FileText, Calendar, Clock, AlertCircle, Upload, CheckCircle,
-    Download, ChevronLeft, X
+    Download, ChevronLeft, X, Eye
 } from 'lucide-react';
 
 interface Question {
@@ -106,7 +106,8 @@ const StudentExamDetail = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (selectedFiles.length === 0 || !exam) return;
+        // Allow if files selected OR it is an external exam (markers as completed without files)
+        if ((selectedFiles.length === 0 && exam?.exam_type !== 'external') || !exam) return;
 
         setSubmitting(true);
         const formData = new FormData();
@@ -122,9 +123,15 @@ const StudentExamDetail = () => {
                     'Content-Type': 'multipart/form-data'
                 }
             });
-            setSubmitting(false);
-            // Refresh exam details to update status
-            fetchExamDetails();
+
+            // For external exams, optimize UX by updating state without waiting for re-fetch
+            if (exam.exam_type === 'external') {
+                setExam(prev => prev ? { ...prev, status: 'submitted' } : null);
+                // Keep submitting true to prevent button flicker/enable
+            } else {
+                setSubmitting(false);
+                fetchExamDetails();
+            }
         } catch (err: any) {
             console.error("Error submitting exam:", err);
             alert(err.response?.data?.detail || "Failed to submit exam");
@@ -238,7 +245,7 @@ const StudentExamDetail = () => {
                             </p>
                         </div>
                         <div className="flex items-center gap-3">
-                            {exam.status === 'checked' && (
+                            {exam.status === 'checked' && exam.exam_type !== 'external' && (
                                 <button
                                     onClick={() => setShowReevalModal(true)}
                                     className="px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
@@ -310,10 +317,10 @@ const StudentExamDetail = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column: Exam Content */}
-                <div className="lg:col-span-2 space-y-6">
-                    {/* Instructions */}
+            {/* Layout based on Exam Type */}
+            {exam.exam_type === 'external' ? (
+                /* EXTERNAL EXAM LAYOUT */
+                <div className="max-w-3xl mx-auto space-y-6">
                     {exam.instructions && (
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                             <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
@@ -323,148 +330,228 @@ const StudentExamDetail = () => {
                         </div>
                     )}
 
-                    {/* Question Paper */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-gray-400" /> Questions
-                        </h3>
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center space-y-6">
+                        <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto">
+                            <Eye className="w-8 h-8" />
+                        </div>
 
-                        {exam.question_format === 'pdf' ? (
-                            <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                <FileText className="w-12 h-12 text-gray-400 mb-3" />
-                                <p className="text-gray-600 mb-4 text-center">
-                                    The question paper is available as a PDF document.
-                                </p>
-                                <button
-                                    onClick={handleDownloadPaper}
-                                    className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                                >
-                                    <Download className={`w-4 h-4 ${downloadingPaper ? 'animate-bounce' : ''}`} />
-                                    {downloadingPaper ? "Downloading..." : "Download Question Paper"}
-                                </button>
-                            </div>
-                        ) : exam.questions && exam.questions.length > 0 ? (
-                            <div className="space-y-6">
-                                {exam.questions.map((q) => (
-                                    <div key={q.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                        <div className="flex justify-between items-start gap-4">
-                                            <div className="flex gap-3">
-                                                <span className="font-medium text-gray-900 min-w-[24px]">Q{q.order_no}.</span>
-                                                <p className="text-gray-800 whitespace-pre-wrap">{q.question_text}</p>
-                                            </div>
-                                            <span className="text-xs font-medium bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 whitespace-nowrap">
-                                                {q.marks} Marks
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-gray-500 italic">No questions to display.</p>
-                        )}
-                    </div>
-                </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">External Exam</h2>
+                            <p className="text-gray-500 max-w-lg mx-auto">
+                                This exam is hosted on an external platform. Please verify you have completed it before marking it as done here.
+                            </p>
+                        </div>
 
-                {/* Right Column: Submission */}
-                <div className="lg:col-span-1">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-6">
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <Upload className="w-5 h-5 text-gray-400" /> Submission
-                        </h3>
-
-                        {exam.status === 'assigned' ? (
-                            isDeadlinePassed ? (
-                                <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 flex items-start gap-3">
-                                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                                    <div>
-                                        <p className="font-medium">Submission Closed</p>
-                                        <p className="text-sm mt-1">The deadline for this exam has passed.</p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <form onSubmit={handleSubmit} className="space-y-4">
-                                    <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-center cursor-pointer relative group">
-                                        <input
-                                            type="file"
-                                            multiple
-                                            accept=".pdf,image/*"
-                                            onChange={handleFileChange}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        />
-                                        <div className="flex flex-col items-center justify-center py-4">
-                                            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                                                <Upload className="w-5 h-5 text-gray-500" />
-                                            </div>
-                                            <p className="text-sm font-medium text-gray-900">
-                                                Click to select files
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-1">PDF or Images accepted</p>
-                                        </div>
-                                    </div>
-
-                                    {selectedFiles.length > 0 && (
-                                        <div className="space-y-2">
-                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Selected Files ({selectedFiles.length})</p>
-                                            {selectedFiles.map((file, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-100 rounded-xl group/item hover:bg-white hover:shadow-sm transition-all">
-                                                    <div className="flex items-center gap-3 overflow-hidden">
-                                                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
-                                                            <FileText className="w-4 h-4" />
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
-                                                            <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</p>
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeFile(idx)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
+                        {exam.status === 'assigned' && !isDeadlinePassed ? (
+                            <div className="space-y-6 max-w-md mx-auto">
+                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-left">
+                                    <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">Step 1: Open Link</p>
+                                    {exam.external_link && (
+                                        <a
+                                            href={exam.external_link}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="block w-full py-3 bg-white text-blue-600 text-center rounded-lg border border-blue-200 font-bold hover:bg-blue-50 transition-colors break-all shadow-sm"
+                                        >
+                                            Open Exam Link ↗
+                                        </a>
                                     )}
+                                </div>
 
+                                <div className="space-y-3">
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Step 2: Confirm Completion</p>
                                     <button
-                                        type="submit"
-                                        disabled={selectedFiles.length === 0 || submitting}
-                                        className="w-full py-3 px-4 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 active:translate-y-0.5"
+                                        onClick={handleSubmit}
+                                        disabled={submitting}
+                                        className="w-full py-4 px-4 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 active:translate-y-0.5"
                                     >
                                         {submitting ? (
                                             <>
-                                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                Submitting...
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                Marking as Completed...
                                             </>
                                         ) : (
-                                            "Submit Exam"
+                                            <>
+                                                <CheckCircle className="w-5 h-5" />
+                                                Mark as Completed
+                                            </>
                                         )}
                                     </button>
-                                </form>
-                            )
-                        ) : (
-                            <div className="bg-green-50 text-green-700 p-6 rounded-xl border border-green-100 text-center">
-                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <CheckCircle className="w-6 h-6 text-green-600" />
                                 </div>
-                                <h4 className="font-semibold text-lg mb-1">Submitted!</h4>
+                            </div>
+                        ) : (
+                            <div className="bg-green-50 text-green-700 p-6 rounded-xl border border-green-100 inline-block w-full max-w-md">
+                                <div className="flex items-center justify-center gap-2 font-bold text-lg mb-1">
+                                    <CheckCircle className="w-6 h-6 text-green-600" />
+                                    {isDeadlinePassed && exam.status === 'assigned' ? "Missed Deadline" : "Exam Completed"}
+                                </div>
                                 <p className="text-sm opacity-90">
-                                    You have successfully submitted this exam.
+                                    {isDeadlinePassed && exam.status === 'assigned'
+                                        ? "The deadline for this exam has passed."
+                                        : "You have marked this external exam as completed."}
                                 </p>
                             </div>
                         )}
+                    </div>
+                </div>
+            ) : (
+                /* SUBJECTIVE EXAM LAYOUT (Two Columns) */
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Left Column: Exam Content */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {/* Instructions */}
+                        {exam.instructions && (
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                    <FileText className="w-5 h-5 text-gray-400" /> Instructions
+                                </h3>
+                                <p className="text-gray-600 whitespace-pre-line">{exam.instructions}</p>
+                            </div>
+                        )}
 
-                        <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                            <h4 className="font-medium text-blue-900 text-sm mb-2">Notice</h4>
-                            <p className="text-xs text-blue-700 leading-relaxed">
-                                Ensure your answers are clear and legible. Once submitted, you cannot make changes.
-                            </p>
+                        {/* Question Paper */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-gray-400" /> Questions
+                            </h3>
+
+                            {exam.question_format === 'pdf' ? (
+                                <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                    <FileText className="w-12 h-12 text-gray-400 mb-3" />
+                                    <p className="text-gray-600 mb-4 text-center">
+                                        The question paper is available as a PDF document.
+                                    </p>
+                                    <button
+                                        onClick={handleDownloadPaper}
+                                        className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                                    >
+                                        <Download className={`w-4 h-4 ${downloadingPaper ? 'animate-bounce' : ''}`} />
+                                        {downloadingPaper ? "Downloading..." : "Download Question Paper"}
+                                    </button>
+                                </div>
+                            ) : exam.questions && exam.questions.length > 0 ? (
+                                <div className="space-y-6">
+                                    {exam.questions.map((q) => (
+                                        <div key={q.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                            <div className="flex justify-between items-start gap-4">
+                                                <div className="flex gap-3">
+                                                    <span className="font-medium text-gray-900 min-w-[24px]">Q{q.order_no}.</span>
+                                                    <p className="text-gray-800 whitespace-pre-wrap">{q.question_text}</p>
+                                                </div>
+                                                <span className="text-xs font-medium bg-white px-2 py-1 rounded border border-gray-200 text-gray-500 whitespace-nowrap">
+                                                    {q.marks} Marks
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-gray-500 italic">No questions to display.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right Column: Submission */}
+                    <div className="lg:col-span-1">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-6">
+                            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                <Upload className="w-5 h-5 text-gray-400" /> Submission
+                            </h3>
+
+                            {exam.status === 'assigned' ? (
+                                isDeadlinePassed ? (
+                                    <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 flex items-start gap-3">
+                                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="font-medium">Submission Closed</p>
+                                            <p className="text-sm mt-1">The deadline for this exam has passed.</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-center cursor-pointer relative group">
+                                            <input
+                                                type="file"
+                                                multiple
+                                                accept=".pdf,image/*"
+                                                onChange={handleFileChange}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                            />
+                                            <div className="flex flex-col items-center justify-center py-4">
+                                                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                                                    <Upload className="w-5 h-5 text-gray-500" />
+                                                </div>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    Click to select files
+                                                </p>
+                                                <p className="text-xs text-gray-500 mt-1">PDF or Images accepted</p>
+                                            </div>
+                                        </div>
+
+                                        {selectedFiles.length > 0 && (
+                                            <div className="space-y-2">
+                                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Selected Files ({selectedFiles.length})</p>
+                                                {selectedFiles.map((file, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-100 rounded-xl group/item hover:bg-white hover:shadow-sm transition-all">
+                                                        <div className="flex items-center gap-3 overflow-hidden">
+                                                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                                                                <FileText className="w-4 h-4" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-medium text-gray-700 truncate">{file.name}</p>
+                                                                <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeFile(idx)}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <button
+                                            type="submit"
+                                            disabled={selectedFiles.length === 0 || submitting}
+                                            className="w-full py-3 px-4 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 active:translate-y-0.5"
+                                        >
+                                            {submitting ? (
+                                                <>
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    Submitting...
+                                                </>
+                                            ) : (
+                                                "Submit Exam"
+                                            )}
+                                        </button>
+                                    </form>
+                                )
+                            ) : (
+                                <div className="bg-green-50 text-green-700 p-6 rounded-xl border border-green-100 text-center">
+                                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <CheckCircle className="w-6 h-6 text-green-600" />
+                                    </div>
+                                    <h4 className="font-semibold text-lg mb-1">Submitted!</h4>
+                                    <p className="text-sm opacity-90">
+                                        You have successfully submitted this exam.
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                                <h4 className="font-medium text-blue-900 text-sm mb-2">Notice</h4>
+                                <p className="text-xs text-blue-700 leading-relaxed">
+                                    Ensure your answers are clear and legible. Once submitted, you cannot make changes.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };

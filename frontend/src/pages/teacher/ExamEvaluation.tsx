@@ -160,8 +160,8 @@ export default function ExamEvaluation() {
                         <div className="text-right">
                             <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Status</span>
                             <span className={`font-bold ${data.submission.status === 'checked' ? 'text-green-600' :
-                                    data.submission.status === 'reeval_requested' ? 'text-purple-600' :
-                                        'text-amber-600'
+                                data.submission.status === 'reeval_requested' ? 'text-purple-600' :
+                                    'text-amber-600'
                                 }`}>
                                 {data.submission.status.replace('_', ' ').toUpperCase()}
                             </span>
@@ -186,89 +186,121 @@ export default function ExamEvaluation() {
                     {/* Left Column: Content */}
                     <div className="lg:col-span-2 space-y-8">
 
-                        {/* Question Paper Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                                <h2 className="font-bold text-gray-900 flex items-center gap-2">
-                                    <FileText className="w-5 h-5 text-gray-400" />
-                                    Question Paper
-                                </h2>
-                                {paperUrl && (
-                                    <a href={paperUrl} download={`Question_Paper_${data.exam.id}.pdf`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                                        <Download className="w-4 h-4" /> Download
-                                    </a>
-                                )}
-                            </div>
-                            <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
-                                {data.exam.question_format === 'pdf' ? (
-                                    paperUrl ? (
-                                        <iframe src={paperUrl} className="w-full h-[600px] rounded-b-xl" title="Question Paper" />
-                                    ) : isLoadingPaper ? (
-                                        <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
-                                            <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-500 rounded-full animate-spin mb-4"></div>
-                                            <span className="text-gray-500 font-medium">Loading Document...</span>
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-12">
-                                            <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-4">
-                                                <FileText className="w-8 h-8 text-gray-400" />
-                                            </div>
-                                            <h3 className="font-medium text-gray-900 mb-2">Question Paper Preview</h3>
-                                            <button
-                                                onClick={handleViewPaper}
-                                                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
-                                            >
-                                                <Eye className="w-4 h-4 text-gray-500" />
-                                                View Question Paper
-                                            </button>
-                                        </div>
-                                    )
-                                ) : (
-                                    <div className="p-8 w-full prose max-w-none text-gray-600">
-                                        <p>Questions are text-based. (Preview not implemented)</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        {data.exam.exam_type === 'external' ? (
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center space-y-4">
+                                <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto">
+                                    <Eye className="w-8 h-8" />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-900">External Exam Verification</h2>
+                                <p className="text-gray-500 max-w-md mx-auto">
+                                    This is an external exam. Please verify the student's performance on the external platform using the link below.
+                                </p>
 
-                        {/* Answer Sheet Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                                <h2 className="font-bold text-gray-900 flex items-center gap-2">
-                                    <FileText className="w-5 h-5 text-gray-400" />
-                                    Student Answer
-                                </h2>
-                                {answerUrl && (
-                                    <a href={answerUrl} download={`Answer_${studentId}.pdf`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                                        <Download className="w-4 h-4" /> Download
+                                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 inline-block max-w-full">
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">External Link</p>
+                                    <a
+                                        href={data.exam.external_link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 font-medium hover:underline break-all block"
+                                    >
+                                        {data.exam.external_link} ↗
                                     </a>
-                                )}
+                                </div>
+
+                                <div className="pt-4 border-t border-gray-100 mt-4">
+                                    <p className="text-sm text-gray-400 italic">
+                                        No file submissions are required for external exams.
+                                    </p>
+                                </div>
                             </div>
-                            <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
-                                {answerUrl ? (
-                                    <iframe src={answerUrl} className="w-full h-[600px] rounded-b-xl" title="Answer Sheet" />
-                                ) : isLoadingAnswer ? (
-                                    <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
-                                        <div className="w-12 h-12 border-4 border-gray-300 border-t-green-500 rounded-full animate-spin mb-4"></div>
-                                        <span className="text-gray-500 font-medium">Loading Answer Sheet...</span>
+                        ) : (
+                            <>
+                                {/* Question Paper Card */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                        <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                                            <FileText className="w-5 h-5 text-gray-400" />
+                                            Question Paper
+                                        </h2>
+                                        {paperUrl && (
+                                            <a href={paperUrl} download={`Question_Paper_${data.exam.id}.pdf`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                                                <Download className="w-4 h-4" /> Download
+                                            </a>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-4">
-                                            <FileText className="w-8 h-8 text-green-500" />
-                                        </div>
-                                        <h3 className="font-medium text-gray-900 mb-2">Student Answer Sheet</h3>
-                                        <button
-                                            onClick={handleViewAnswer}
-                                            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
-                                        >
-                                            <Eye className="w-4 h-4 text-green-600" />
-                                            View Answer Sheet
-                                        </button>
+                                    <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
+                                        {data.exam.question_format === 'pdf' ? (
+                                            paperUrl ? (
+                                                <iframe src={paperUrl} className="w-full h-[600px] rounded-b-xl" title="Question Paper" />
+                                            ) : isLoadingPaper ? (
+                                                <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
+                                                    <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-500 rounded-full animate-spin mb-4"></div>
+                                                    <span className="text-gray-500 font-medium">Loading Document...</span>
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-12">
+                                                    <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-4">
+                                                        <FileText className="w-8 h-8 text-gray-400" />
+                                                    </div>
+                                                    <h3 className="font-medium text-gray-900 mb-2">Question Paper Preview</h3>
+                                                    <button
+                                                        onClick={handleViewPaper}
+                                                        className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
+                                                    >
+                                                        <Eye className="w-4 h-4 text-gray-500" />
+                                                        View Question Paper
+                                                    </button>
+                                                </div>
+                                            )
+                                        ) : (
+                                            <div className="p-8 w-full prose max-w-none text-gray-600">
+                                                <p>Questions are text-based. (Preview not implemented)</p>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        </div>
+                                </div>
+
+                                {/* Answer Sheet Card */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                        <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                                            <FileText className="w-5 h-5 text-gray-400" />
+                                            Student Answer
+                                        </h2>
+                                        {answerUrl && (
+                                            <a href={answerUrl} download={`Answer_${studentId}.pdf`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                                                <Download className="w-4 h-4" /> Download
+                                            </a>
+                                        )}
+                                    </div>
+                                    <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
+                                        {answerUrl ? (
+                                            <iframe src={answerUrl} className="w-full h-[600px] rounded-b-xl" title="Answer Sheet" />
+                                        ) : isLoadingAnswer ? (
+                                            <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
+                                                <div className="w-12 h-12 border-4 border-gray-300 border-t-green-500 rounded-full animate-spin mb-4"></div>
+                                                <span className="text-gray-500 font-medium">Loading Answer Sheet...</span>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-12">
+                                                <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-4">
+                                                    <FileText className="w-8 h-8 text-green-500" />
+                                                </div>
+                                                <h3 className="font-medium text-gray-900 mb-2">Student Answer Sheet</h3>
+                                                <button
+                                                    onClick={handleViewAnswer}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
+                                                >
+                                                    <Eye className="w-4 h-4 text-green-600" />
+                                                    View Answer Sheet
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                     </div>
 

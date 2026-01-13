@@ -387,6 +387,7 @@ export default function CreateExam() {
                             <input
                                 type="datetime-local"
                                 required
+                                min={new Date().toISOString().slice(0, 16)}
                                 className="w-full px-4 py-3 rounded-xl bg-gray-50 border-transparent focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none font-medium text-gray-600"
                                 value={deadline}
                                 onChange={e => setDeadline(e.target.value)}

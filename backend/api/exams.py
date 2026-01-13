@@ -203,12 +203,24 @@ def assign_exam(
         # C. Send Email
         student_user = db.query(User).filter(User.id == uid).first()
         if student_user and student_user.email:
+            # Format Deadline: "Jan 14, 2:59 PM UTC"
+            formatted_deadline = "No Deadline"
+            if exam.deadline:
+                # Ensure UTC awareness if missing
+                dt = exam.deadline
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                
+                # Convert to System Local Time for Email (User perspective)
+                local_dt = dt.astimezone()
+                formatted_deadline = local_dt.strftime("%b %d, %I:%M %p")
+
             subject_line = f"New Exam Assigned: {exam.title}"
             email_body = get_exam_assigned_template(
                 student_name=student_user.full_name,
                 exam_title=exam.title,
                 subject=exam.subject,
-                deadline=exam.deadline.strftime("%Y-%m-%d %H:%M UTC") if exam.deadline else "No Deadline",
+                deadline=formatted_deadline,
                 teacher_name=current_user.full_name,
                 total_marks=exam.total_marks
             )
@@ -230,7 +242,7 @@ def assign_exam(
 @router.post("/{exam_id}/submit")
 async def submit_exam(
     exam_id: int,
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File(None), # Optional now
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -243,19 +255,18 @@ async def submit_exam(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     
-    # Only "subjective" exams allow file submission. "external" exams are just links (teacher handled?)
-    # or external exams might not have submission here? 
-    # Requirement: "student exam submission for subjective exams".
-    if exam.exam_type != "subjective":
-        raise HTTPException(status_code=400, detail="Submission only allowed for subjective exams")
-
     # 3. Validation: Deadline
     now = datetime.now(timezone.utc)
-    if exam.deadline and now > exam.deadline:
-         raise HTTPException(status_code=400, detail="Deadline has passed")
+    if exam.deadline:
+         # Ensure exam.deadline is timezone aware
+         deadline_dt = exam.deadline
+         if deadline_dt.tzinfo is None:
+             deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+             
+         if now > deadline_dt:
+             raise HTTPException(status_code=400, detail="Deadline has passed")
 
     # 4. Validation: Assignment Status
-    # Must be assigned and NOT already submitted
     assignment = db.query(ExamAssignment).filter(
         ExamAssignment.exam_id == exam_id, 
         ExamAssignment.student_id == current_user.id
@@ -265,62 +276,73 @@ async def submit_exam(
         raise HTTPException(status_code=403, detail="You are not assigned to this exam")
     
     if assignment.status != "assigned":
-        # Could be "submitted", "checked", etc.
         raise HTTPException(status_code=400, detail="You have already submitted this exam or it is in a processed state")
 
-    # 5. File Processing
-    if not files:
-        raise HTTPException(status_code=400, detail="No files uploaded")
-        
     final_data = None
-    mime_type = "application/pdf"
-    upload_type = "pdf"
+    mime_type = None
+    upload_type = "external_link" # default for external
 
-    try:
-        # Check if first file is PDF (Single PDF Submission)
-        if len(files) == 1 and files[0].content_type == "application/pdf":
-            final_data = await files[0].read()
-        else:
-            # Multiple files or Images -> Convert to Single PDF
-            images = []
-            for file in files:
-                content = await file.read()
-                # Verify it's an image
-                if not file.content_type.startswith("image/"):
-                    # If we have mixed PDF + Images, or Text, that's complex. 
-                    # Requirement says "If multiple images... Convert to SINGLE PDF".
-                    # Let's reject non-images for multi-upload for now to be safe.
-                    raise HTTPException(status_code=400, detail=f"File {file.filename} is not an image. Only Images or a single PDF are allowed.")
+    # 5. Logic based on Exam Type
+    if exam.exam_type == "subjective":
+        if not files:
+             raise HTTPException(status_code=400, detail="No files uploaded for subjective exam")
+        
+        upload_type = "pdf"
+        mime_type = "application/pdf"
+        
+        try:
+            # Check if first file is PDF (Single PDF Submission)
+            if len(files) == 1 and files[0].content_type == "application/pdf":
+                final_data = await files[0].read()
+            else:
+                # Multiple files or Images -> Convert to Single PDF
+                images = []
+                for file in files:
+                    content = await file.read()
+                    if not file.content_type.startswith("image/"):
+                        raise HTTPException(status_code=400, detail=f"File {file.filename} is not an image. Only Images or a single PDF are allowed.")
+                    
+                    try:
+                        img = PILImage.open(io.BytesIO(content))
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        images.append(img)
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"Invalid image file {file.filename}")
+
+                if not images:
+                     raise HTTPException(status_code=400, detail="No valid images found to convert")
+
+                # Save to PDF
+                pdf_buffer = io.BytesIO()
+                images[0].save(
+                    pdf_buffer, 
+                    "PDF", 
+                    resolution=100.0, 
+                    save_all=True, 
+                    append_images=images[1:]
+                )
+                final_data = pdf_buffer.getvalue()
                 
-                try:
-                    img = PILImage.open(io.BytesIO(content))
-                    # Convert to RGB (handle RGBA/P palette issues for PDF)
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    images.append(img)
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f"Invalid image file {file.filename}")
+        except HTTPException:
+            raise
+        except Exception as e:
+             print(f"File processing error: {e}")
+             raise HTTPException(status_code=500, detail="Failed to process files. Ensure you are uploading valid PDFs or Images.")
+    
+    elif exam.exam_type == "external":
+        # External exams don't need files. Just "Mark as Completed".
+        # We can store a dummy or empty submission record.
+        upload_type = "external_completed"
+        # final_data remains None or checks DB schema constraint? 
+        # LargeBinary is nullable in models? 
+        # Checking logic: `answer_sheet_data = Column(LargeBinary)` -> Nullable by default (unless nullable=False specified)
+        # Checking models.py snippet provided earlier: `answer_sheet_data = Column(LargeBinary)` 
+        # Does not say nullable=False. So None allows.
+        pass
 
-            if not images:
-                 raise HTTPException(status_code=400, detail="No valid images found to convert")
-
-            # Save to PDF
-            pdf_buffer = io.BytesIO()
-            # save_all=True saves all images in list to the PDF
-            images[0].save(
-                pdf_buffer, 
-                "PDF", 
-                resolution=100.0, 
-                save_all=True, 
-                append_images=images[1:]
-            )
-            final_data = pdf_buffer.getvalue()
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-         print(f"File processing error: {e}")
-         raise HTTPException(status_code=500, detail="Failed to process files. Ensure you are uploading valid PDFs or Images.")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid exam type for submission")
 
     # 6. Save Submission
     submission = ExamSubmission(
@@ -463,6 +485,14 @@ def request_reevaluation(
     if current_user.role != "student":
         raise HTTPException(status_code=403, detail="Only students can request re-evaluation")
 
+    # Check exam type - Disable re-eval for external exams
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if exam.exam_type == "external":
+        raise HTTPException(status_code=400, detail="Re-evaluation is not available for external exams")
+
     # 2. Get Assignment
     assignment = db.query(ExamAssignment).filter(
         ExamAssignment.exam_id == exam_id,
@@ -494,31 +524,6 @@ def request_reevaluation(
     assignment.status = "reeval_requested"
     
     # 7. Log Event
-    log_exam_event(
-        db,
-        exam_id=exam_id,
-        student_id=current_user.id,
-        teacher_id=current_user.id, # Triggered by student? Actually current_user is student.
-        # But log_exam_event requires teacher_id.
-        # We need to fetch the exam to get the teacher_id to pass it correctly?
-        # Let's fetch exam.
-        event_type=EVENT_REEVAL_REQUESTED,
-        triggered_by=TRIGGER_STUDENT
-    )
-    # Ah, wait. log_exam_event signature:
-    # log_exam_event(db, exam_id, student_id, teacher_id, event_type, triggered_by)
-    # The student triggers it. But we need teacher_id for the column properly? 
-    # Or does the log function allow nullable teacher_id?
-    # Checking models.py... teacher_id nullable=False in ExamEvent? 
-    # Step 222 snippet: teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    # So we MUST provide a valid teacher_id.
-    
-    # Fetch Exam to get teacher_id
-    exam = db.query(Exam).filter(Exam.id == exam_id).first()
-    if not exam:
-        raise HTTPException(status_code=404, detail="Exam not found")
-
-    # Re-call log with correct teacher_id
     log_exam_event(
         db,
         exam_id=exam_id,
@@ -670,12 +675,18 @@ async def create_exam(
     # 5. Process Deadline to UTC
     # Expecting ISO 8601 string, e.g., "2023-10-27T10:00:00Z" or with offset
     # Ideally frontend sends UTC ISO string. We store as is (assuming models handle datetime or we parse it)
-    # The DB model asks for DateTime(timezone=True). 
-    # Let's try to parse it to ensure validity
     try:
-        # replace Z with +00:00 to be safe for fromisoformat in older pythons if needed, 
-        # but modern python handles it.
+        # replace Z with +00:00 to be safe for fromisoformat in older pythons if needed
         deadline_dt = datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+        
+        # Ensure it's timezone-aware (assume UTC if not)
+        if deadline_dt.tzinfo is None:
+            deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+            
+        # Check against now
+        if deadline_dt < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Deadline must be in the future")
+            
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid deadline format. Use ISO 8601")
 
@@ -1038,7 +1049,9 @@ def get_evaluation_metadata(
             "title": exam.title,
             "total_marks": exam.total_marks,
             "question_format": exam.question_format,
-            "has_question_paper": bool(exam.question_paper_data)
+            "has_question_paper": bool(exam.question_paper_data),
+            "exam_type": exam.exam_type,
+            "external_link": exam.external_link
         },
         "submission": {
             "student_name": student.full_name,
