@@ -126,11 +126,27 @@ const StudentQuizList = () => {
 
 
     const handleStartQuiz = (quizId: number) => {
-        navigate(`/student/quiz/${quizId}`);
+        let path = `/student/quiz/${quizId}`;
+        const params = new URLSearchParams();
+        if (selectedTeacherId) params.append('teacher', selectedTeacherId.toString());
+        if (selectedSubject) params.append('subject', selectedSubject);
+
+        const queryString = params.toString();
+        if (queryString) path += `?${queryString}`;
+
+        navigate(path);
     };
 
     const handleViewResult = (quizId: number) => {
-        navigate(`/dashboard/student-quiz-result/${quizId}`);
+        let path = `/dashboard/student-quiz-result/${quizId}`;
+        const params = new URLSearchParams();
+        if (selectedTeacherId) params.append('teacher', selectedTeacherId.toString());
+        if (selectedSubject) params.append('subject', selectedSubject);
+
+        const queryString = params.toString();
+        if (queryString) path += `?${queryString}`;
+
+        navigate(path);
     };
 
     // --- DRILL-DOWN LOGIC ---

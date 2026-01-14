@@ -254,9 +254,18 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                                 {user?.avatar_url ? (
                                     <img
-                                        src={user.avatar_url?.startsWith('http') ? user.avatar_url : `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}`}
+                                        src={
+                                            user.avatar_url?.startsWith('http')
+                                                ? user.avatar_url
+                                                : user.id
+                                                    ? `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}`
+                                                    : '' // Prevent /api/users/undefined/avatar
+                                        }
                                         alt="Profile"
                                         className="w-full h-full object-cover"
+                                        onLoad={(e) => {
+                                            if (!e.currentTarget.src) e.currentTarget.style.display = 'none';
+                                        }}
                                     />
                                 ) : (
                                     <User className="w-5 h-5 text-primary" />
@@ -325,7 +334,13 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                                     <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-4 border-white shadow-md overflow-hidden">
                                         {editAvatarUrl ? (
                                             <img
-                                                src={editAvatarUrl?.startsWith('http') ? editAvatarUrl : `${API_BASE_URL}/api/users/${user?.id}/avatar?v=${avatarKey}`}
+                                                src={
+                                                    editAvatarUrl?.startsWith('http')
+                                                        ? editAvatarUrl
+                                                        : user?.id
+                                                            ? `${API_BASE_URL}/api/users/${user.id}/avatar?v=${avatarKey}`
+                                                            : ''
+                                                }
                                                 alt="Preview"
                                                 className="w-full h-full object-cover"
                                             />

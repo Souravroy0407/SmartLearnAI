@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../api/axios';
 import {
     CheckCircle, XCircle, Clock, Award, ArrowLeft,
@@ -36,6 +36,7 @@ interface QuizResultData {
 const QuizResult = () => {
     const { quizId } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [result, setResult] = useState<QuizResultData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -71,7 +72,17 @@ const QuizResult = () => {
                 <h2 className="text-xl font-bold text-red-700 mb-2">Error Loading Results</h2>
                 <p className="text-red-600 mb-6">{error || "Result not found"}</p>
                 <button
-                    onClick={() => navigate('/dashboard/student-quizzes')}
+                    onClick={() => {
+                        let path = '/dashboard/student-quizzes';
+                        const teacher = searchParams.get('teacher');
+                        const subject = searchParams.get('subject');
+                        const params = new URLSearchParams();
+                        if (teacher) params.append('teacher', teacher);
+                        if (subject) params.append('subject', subject);
+                        const queryString = params.toString();
+                        if (queryString) path += `?${queryString}`;
+                        navigate(path);
+                    }}
                     className="px-6 py-2 bg-white text-red-600 font-bold rounded-xl border border-red-200 hover:bg-red-50 transition-colors"
                 >
                     Back to Quizzes
@@ -90,7 +101,17 @@ const QuizResult = () => {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                         <div>
                             <button
-                                onClick={() => navigate('/dashboard/student-quizzes')}
+                                onClick={() => {
+                                    let path = '/dashboard/student-quizzes';
+                                    const teacher = searchParams.get('teacher');
+                                    const subject = searchParams.get('subject');
+                                    const params = new URLSearchParams();
+                                    if (teacher) params.append('teacher', teacher);
+                                    if (subject) params.append('subject', subject);
+                                    const queryString = params.toString();
+                                    if (queryString) path += `?${queryString}`;
+                                    navigate(path);
+                                }}
                                 className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors mb-4 font-medium text-sm"
                             >
                                 <ArrowLeft className="w-4 h-4" />

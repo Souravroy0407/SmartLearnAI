@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../api/axios';
 import { Clock, AlertTriangle, ArrowRight, Sparkles, Brain, CheckCircle2 } from 'lucide-react';
 import { useQuiz } from '../../context/QuizContext';
@@ -22,6 +22,7 @@ interface Quiz {
 const QuizActive = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { fetchQuizzes } = useQuiz();
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
@@ -43,6 +44,23 @@ const QuizActive = () => {
     useEffect(() => {
         const fetchQuiz = async () => {
             try {
+                // Check if already attempted first
+                const statusRes = await axios.get(`/api/quiz/${id}/status`);
+                if (statusRes.data.status === 'attempted') {
+                    // Redirect to result page if already attempted
+                    let resultPath = `/dashboard/student-quiz-result/${id}`;
+                    const teacher = searchParams.get('teacher');
+                    const subject = searchParams.get('subject');
+                    const params = new URLSearchParams();
+                    if (teacher) params.append('teacher', teacher);
+                    if (subject) params.append('subject', subject);
+                    const queryString = params.toString();
+                    if (queryString) resultPath += `?${queryString}`;
+
+                    navigate(resultPath, { replace: true });
+                    return;
+                }
+
                 // Simulate a small delay for the loading animation to be appreciated
                 const [response] = await Promise.all([
                     axios.get(`/api/quiz/${id}`),
@@ -65,7 +83,7 @@ const QuizActive = () => {
             }
         };
         fetchQuiz();
-    }, [id, navigate]);
+    }, [id, navigate, searchParams]);
 
     // Timer Logic
     useEffect(() => {
@@ -149,17 +167,29 @@ const QuizActive = () => {
             });
 
             await fetchQuizzes(true);
-            navigate('/dashboard/student-quizzes');
+
+            // Construct result path with preserved context
+            let resultPath = `/dashboard/student-quiz-result/${id}`;
+            const contextParams = new URLSearchParams();
+            const teacher = searchParams.get('teacher');
+            const subject = searchParams.get('subject');
+            if (teacher) contextParams.append('teacher', teacher);
+            if (subject) contextParams.append('subject', subject);
+
+            const queryString = contextParams.toString();
+            if (queryString) resultPath += `?${queryString}`;
+
+            navigate(resultPath, { replace: true });
         } catch (error: any) {
             console.error("Submission failed", error);
             const msg = error.response?.data?.detail || "Failed to submit quiz. Please try again.";
             setMessageModal({ show: true, message: msg, type: 'error' });
             if (error.response?.status === 400) {
-                setTimeout(() => navigate('/dashboard/student-quizzes'), 2000);
+                navigate('/dashboard/student-quizzes');
             }
             setSubmitting(false);
         }
-    }, [id, navigate, submitting, fetchQuizzes]);
+    }, [id, navigate, submitting, fetchQuizzes, searchParams]);
 
     const [headerHeight, setHeaderHeight] = useState(240); // Better initial estimate for expanded header
     const headerRef = useRef<HTMLDivElement>(null);

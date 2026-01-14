@@ -7,7 +7,8 @@ import {
     FileText,
     AlertCircle,
     CheckCircle2,
-    Eye
+    Eye,
+    ExternalLink
 } from 'lucide-react';
 import axios from '../../api/axios';
 
@@ -32,6 +33,13 @@ export default function ExamEvaluation() {
     // PDFs
     const [paperUrl, setPaperUrl] = useState<string | null>(null);
     const [answerUrl, setAnswerUrl] = useState<string | null>(null);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         if (examId && studentId) {
@@ -66,23 +74,39 @@ export default function ExamEvaluation() {
         }
     };
 
-    const handleViewPaper = async () => {
+    const handleViewPaper = async (autoOpen = false) => {
         setIsLoadingPaper(true);
         try {
             const paperRes = await axios.get(`/api/exams/${examId}/download-paper`, { responseType: 'blob' });
             const paperBlob = new Blob([paperRes.data], { type: 'application/pdf' });
-            setPaperUrl(URL.createObjectURL(paperBlob));
-        } catch (e) { console.error(e); }
+            const newUrl = URL.createObjectURL(paperBlob);
+            setPaperUrl(newUrl);
+            if (autoOpen) {
+                window.open(newUrl, '_blank');
+            }
+            return newUrl;
+        } catch (e) {
+            console.error(e);
+            return null;
+        }
         finally { setIsLoadingPaper(false); }
     };
 
-    const handleViewAnswer = async () => {
+    const handleViewAnswer = async (autoOpen = false) => {
         setIsLoadingAnswer(true);
         try {
             const answerRes = await axios.get(`/api/exams/${examId}/submissions/${studentId}/download-answer`, { responseType: 'blob' });
             const answerBlob = new Blob([answerRes.data], { type: 'application/pdf' });
-            setAnswerUrl(URL.createObjectURL(answerBlob));
-        } catch (e) { console.error(e); }
+            const newUrl = URL.createObjectURL(answerBlob);
+            setAnswerUrl(newUrl);
+            if (autoOpen) {
+                window.open(newUrl, '_blank');
+            }
+            return newUrl;
+        } catch (e) {
+            console.error(e);
+            return null;
+        }
         finally { setIsLoadingAnswer(false); }
     };
 
@@ -231,7 +255,47 @@ export default function ExamEvaluation() {
                                     </div>
                                     <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
                                         {data.exam.question_format === 'pdf' ? (
-                                            paperUrl ? (
+                                            isMobile ? (
+                                                <div className="p-6 w-full flex justify-center">
+                                                    <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col items-center text-center space-y-4 w-full max-w-sm mx-auto">
+                                                        <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                                                            <FileText className="w-10 h-10" />
+                                                        </div>
+                                                        <div className="w-full">
+                                                            <h3 className="font-bold text-gray-900 break-all line-clamp-2 px-2">{data.exam.title}_Paper.pdf</h3>
+                                                            <p className="text-sm text-gray-500 mt-1">Uploaded by Teacher</p>
+                                                        </div>
+
+                                                        <div className="flex flex-col w-full gap-2">
+                                                            <button
+                                                                onClick={() => paperUrl ? window.open(paperUrl, '_blank') : handleViewPaper(true)}
+                                                                disabled={isLoadingPaper}
+                                                                className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                                                            >
+                                                                {isLoadingPaper ? (
+                                                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                ) : (
+                                                                    <>
+                                                                        <ExternalLink className="w-5 h-5" />
+                                                                        Open PDF
+                                                                    </>
+                                                                )}
+                                                            </button>
+
+                                                            {paperUrl && (
+                                                                <a
+                                                                    href={paperUrl}
+                                                                    download={`Question_Paper_${data.exam.id}.pdf`}
+                                                                    className="flex items-center justify-center gap-2 px-6 py-2 bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-200 hover:bg-gray-100 transition-all"
+                                                                >
+                                                                    <Download className="w-4 h-4" />
+                                                                    Download
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : paperUrl ? (
                                                 <iframe src={paperUrl} className="w-full h-[600px] rounded-b-xl" title="Question Paper" />
                                             ) : isLoadingPaper ? (
                                                 <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
@@ -245,7 +309,7 @@ export default function ExamEvaluation() {
                                                     </div>
                                                     <h3 className="font-medium text-gray-900 mb-2">Question Paper Preview</h3>
                                                     <button
-                                                        onClick={handleViewPaper}
+                                                        onClick={() => handleViewPaper(false)}
                                                         className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
                                                     >
                                                         <Eye className="w-4 h-4 text-gray-500" />
@@ -293,7 +357,47 @@ export default function ExamEvaluation() {
                                         )}
                                     </div>
                                     <div className="p-1 min-h-[500px] bg-gray-50 flex flex-col items-center justify-center">
-                                        {answerUrl ? (
+                                        {isMobile ? (
+                                            <div className="p-6 w-full flex justify-center">
+                                                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm flex flex-col items-center text-center space-y-4 w-full max-w-sm mx-auto">
+                                                    <div className="w-16 h-16 bg-green-50 text-green-500 rounded-2xl flex items-center justify-center">
+                                                        <FileText className="w-10 h-10" />
+                                                    </div>
+                                                    <div className="w-full">
+                                                        <h3 className="font-bold text-gray-900 break-all line-clamp-2 px-2">Answer_Sheet_{data.submission.student_name}.pdf</h3>
+                                                        <p className="text-sm text-gray-500 mt-1">Uploaded by Student</p>
+                                                    </div>
+
+                                                    <div className="flex flex-col w-full gap-2">
+                                                        <button
+                                                            onClick={() => answerUrl ? window.open(answerUrl, '_blank') : handleViewAnswer(true)}
+                                                            disabled={isLoadingAnswer}
+                                                            className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                                                        >
+                                                            {isLoadingAnswer ? (
+                                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                            ) : (
+                                                                <>
+                                                                    <ExternalLink className="w-5 h-5" />
+                                                                    Open PDF
+                                                                </>
+                                                            )}
+                                                        </button>
+
+                                                        {answerUrl && (
+                                                            <a
+                                                                href={answerUrl}
+                                                                download={`Answer_${studentId}.pdf`}
+                                                                className="flex items-center justify-center gap-2 px-6 py-2 bg-gray-50 text-gray-700 font-medium rounded-xl border border-gray-200 hover:bg-gray-100 transition-all"
+                                                            >
+                                                                <Download className="w-4 h-4" />
+                                                                Download
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : answerUrl ? (
                                             <iframe src={answerUrl} className="w-full h-[600px] rounded-b-xl" title="Answer Sheet" />
                                         ) : isLoadingAnswer ? (
                                             <div className="w-full h-[600px] bg-gray-100 animate-pulse flex flex-col items-center justify-center">
@@ -307,7 +411,7 @@ export default function ExamEvaluation() {
                                                 </div>
                                                 <h3 className="font-medium text-gray-900 mb-2">Student Answer Sheet</h3>
                                                 <button
-                                                    onClick={handleViewAnswer}
+                                                    onClick={() => handleViewAnswer(false)}
                                                     className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 text-gray-700 font-medium transition-all"
                                                 >
                                                     <Eye className="w-4 h-4 text-green-600" />
