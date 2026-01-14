@@ -609,6 +609,120 @@ def delete_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: User 
     db.commit()
     return {"message": "Quiz deleted successfully"}
 
+@router.get("/{quiz_id}/edit")
+def get_quiz_for_edit(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.teacher_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+        
+    if quiz.teacher_id != current_user.teacher_profile.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this quiz")
+    
+    questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    
+    # Optimize: Fetch all options for these questions in one query
+    question_ids = [q.id for q in questions]
+    all_options = []
+    if question_ids:
+        all_options = db.query(Option).filter(Option.question_id.in_(question_ids)).all()
+    
+    # Group options by question_id
+    options_by_question = {}
+    for opt in all_options:
+        if opt.question_id not in options_by_question:
+            options_by_question[opt.question_id] = []
+        options_by_question[opt.question_id].append(opt)
+
+    questions_data = []
+    for q in questions:
+        options = options_by_question.get(q.id, [])
+        questions_data.append({
+            "text": q.text,
+            "options": [{"text": opt.text, "is_correct": bool(opt.is_correct)} for opt in options]
+        })
+    
+    return {
+        "id": quiz.id,
+        "title": quiz.title,
+        "description": quiz.description,
+        "duration_minutes": quiz.duration_minutes,
+        "deadline": quiz.deadline.isoformat() if quiz.deadline else None,
+        "subject": quiz.subject,
+        "topic": quiz.topic,
+        "questions": questions_data
+    }
+
+@router.put("/{quiz_id}")
+def update_quiz(quiz_id: int, quiz_data: QuizCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.teacher_profile:
+         raise HTTPException(status_code=403, detail="Not authorized")
+
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+        
+    if quiz.teacher_id != current_user.teacher_profile.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this quiz")
+
+    # Validate Subject
+    teacher_subjects = [s.strip() for s in (current_user.teacher_profile.subjects or "").split(",") if s.strip()]
+    if quiz_data.subject not in teacher_subjects:
+        raise HTTPException(status_code=400, detail=f"Invalid subject '{quiz_data.subject}'")
+
+    # Parse deadline
+    deadline_dt = None
+    if quiz_data.deadline:
+        try:
+            deadline_str = quiz_data.deadline.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(deadline_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            deadline_dt = dt
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format.")
+
+    # Update Quiz metadata
+    quiz.title = quiz_data.title
+    quiz.description = quiz_data.description
+    quiz.duration_minutes = quiz_data.duration_minutes
+    quiz.deadline = deadline_dt
+    quiz.subject = quiz_data.subject
+    quiz.topic = quiz_data.topic
+    
+    # Simplify update: Delete old questions and options and recreate
+    # First delete student answers for this quiz to avoid FK issues
+    attempts = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id).all()
+    attempt_ids = [a.id for a in attempts]
+    if attempt_ids:
+        db.query(StudentAnswer).filter(StudentAnswer.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
+        db.query(QuizAttempt).filter(QuizAttempt.id.in_(attempt_ids)).delete(synchronize_session=False)
+
+    # Delete old options
+    old_questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
+    old_question_ids = [q.id for q in old_questions]
+    if old_question_ids:
+        db.query(Option).filter(Option.question_id.in_(old_question_ids)).delete(synchronize_session=False)
+        db.query(Question).filter(Question.id.in_(old_question_ids)).delete(synchronize_session=False)
+
+    # Recreate questions and options
+    for q_data in quiz_data.questions:
+        new_question = Question(text=q_data.text, quiz_id=quiz_id)
+        db.add(new_question)
+        db.commit()
+        db.refresh(new_question)
+        
+        for opt_data in q_data.options:
+            new_option = Option(text=opt_data.text, is_correct=opt_data.is_correct, question_id=new_question.id)
+            db.add(new_option)
+    
+    db.commit()
+    return {"message": "Quiz updated successfully"}
+
 @router.get("/{quiz_id}/status")
 def get_quiz_status(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user.student_profile:

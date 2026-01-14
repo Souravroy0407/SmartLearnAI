@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from '../../api/axios';
 import { Clock, AlertTriangle, ArrowRight, Sparkles, Brain, CheckCircle2 } from 'lucide-react';
@@ -161,6 +161,56 @@ const QuizActive = () => {
         }
     }, [id, navigate, submitting, fetchQuizzes]);
 
+    const [headerHeight, setHeaderHeight] = useState(240); // Better initial estimate for expanded header
+    const headerRef = useRef<HTMLDivElement>(null);
+    const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(window.scrollY > 120);
+    const [isDescExpanded, setIsDescExpanded] = useState(false);
+    const lastScrollY = useRef(window.scrollY);
+    const scrollThreshold = 10;
+
+    // Use useLayoutEffect for immediate measurement before browser paint
+    useLayoutEffect(() => {
+        if (!headerRef.current) return;
+
+        const measure = () => {
+            if (headerRef.current) {
+                // Use getBoundingClientRect for more precise measurement including half-pixels
+                const height = headerRef.current.getBoundingClientRect().height;
+                setHeaderHeight(height);
+            }
+        };
+
+        // Initial measurement
+        measure();
+
+        const observer = new ResizeObserver(() => {
+            measure();
+        });
+
+        observer.observe(headerRef.current);
+
+        return () => observer.disconnect();
+    }, [quiz, loading]); // Re-run when quiz data arrives or loading state changes
+
+    useEffect(() => {
+        const handleScroll = () => {
+            const currentScrollY = window.scrollY;
+
+            if (Math.abs(currentScrollY - lastScrollY.current) < scrollThreshold) return;
+
+            if (currentScrollY > 120 && currentScrollY > lastScrollY.current) {
+                setIsHeaderCollapsed(true);
+            }
+            else if (currentScrollY < lastScrollY.current - 20 || currentScrollY < 50) {
+                setIsHeaderCollapsed(false);
+            }
+            lastScrollY.current = currentScrollY;
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
     // Animation Variants
     const containerVariants = {
         hidden: { opacity: 0 },
@@ -235,58 +285,97 @@ const QuizActive = () => {
                         variants={containerVariants}
                         className="pb-32"
                     >
-                        {/* Glassmorphism Header */}
-                        <motion.div
-                            className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 border-b border-white/20 shadow-sm"
-                            initial={{ y: -100 }}
-                            animate={{ y: 0 }}
-                            transition={{ type: "spring", stiffness: 100, damping: 20 }}
-                        >
-                            <div className="max-w-4xl mx-auto px-4 py-4">
-                                <div className="flex justify-between items-center mb-4">
-                                    <div>
-                                        <h1 className="text-xl font-bold text-gray-900 line-clamp-1">{quiz.title}</h1>
-                                        <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                                            <span className="flex items-center gap-1">
-                                                <Sparkles className="w-3 h-3 text-yellow-500" />
-                                                {totalQuestions} Questions
-                                            </span>
-                                            <span>•</span>
-                                            <span>{quiz.description}</span>
+                        {/* Fixed Header */}
+                        <div className="fixed top-0 left-0 right-0 z-40" ref={headerRef}>
+                            <motion.div
+                                className="backdrop-blur-xl bg-white/90 border-b border-gray-200/50 shadow-sm overflow-hidden"
+                                animate={{
+                                    paddingTop: isHeaderCollapsed ? '10px' : '16px',
+                                    paddingBottom: isHeaderCollapsed ? '6px' : '16px'
+                                }}
+                                transition={{ duration: 0.3, ease: "easeInOut" }}
+                            >
+                                <div className="max-w-4xl mx-auto px-4 md:px-6">
+                                    <div className="flex justify-between items-start gap-4 mb-2">
+                                        <div className="flex-1 min-w-0">
+                                            <h1 className={`font-bold text-gray-900 transition-all duration-300 leading-tight ${isHeaderCollapsed ? 'text-lg truncate' : 'text-xl md:text-2xl'}`}>
+                                                {quiz.title}
+                                            </h1>
+
+                                            <AnimatePresence initial={false}>
+                                                {!isHeaderCollapsed && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
+                                                        exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <div className="text-sm text-gray-600 leading-relaxed font-medium">
+                                                            <p className={!isDescExpanded ? 'line-clamp-2 md:line-clamp-none' : ''}>
+                                                                {quiz.description}
+                                                            </p>
+                                                            {quiz.description.length > 80 && (
+                                                                <button
+                                                                    onClick={() => setIsDescExpanded(!isDescExpanded)}
+                                                                    className="md:hidden text-primary font-bold mt-1 active:scale-95 transition-transform"
+                                                                >
+                                                                    {isDescExpanded ? 'Read less' : 'Read more'}
+                                                                </button>
+                                                            )}
+                                                            <div className="flex items-center gap-3 mt-3 text-xs text-secondary font-bold uppercase tracking-wider">
+                                                                <span className="flex items-center gap-1.5 bg-secondary-light/10 px-2 py-1 rounded-md">
+                                                                    <Sparkles className="w-3 h-3 text-primary" />
+                                                                    {totalQuestions} Questions
+                                                                </span>
+                                                                <span className="bg-secondary-light/10 px-2 py-1 rounded-md">
+                                                                    {quiz.duration_minutes} Minutes
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+
+                                        <motion.div
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-sm font-bold shadow-sm border transition-all duration-300 ${timeLeft < 60
+                                                ? 'bg-red-50 text-red-600 border-red-200'
+                                                : 'bg-white text-primary border-gray-100'
+                                                }`}
+                                            animate={timeLeft < 60 ? { scale: [1, 1.05, 1], backgroundColor: ['#fef2f2', '#fee2e2', '#fef2f2'] } : {}}
+                                            transition={{ repeat: Infinity, duration: 1 }}
+                                        >
+                                            <Clock className={`w-4 h-4 ${timeLeft < 60 ? 'animate-pulse' : ''}`} />
+                                            {formatTime(timeLeft)}
+                                        </motion.div>
+                                    </div>
+
+                                    {/* Progress Bar */}
+                                    <div className={`transition-all duration-300 ${isHeaderCollapsed ? 'mt-1' : 'mt-4 space-y-1'}`}>
+                                        {!isHeaderCollapsed && (
+                                            <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-gray-400 px-1">
+                                                <span>Progress</span>
+                                                <span>{answeredCount} / {totalQuestions}</span>
+                                            </div>
+                                        )}
+                                        <div className={`bg-gray-100 rounded-full overflow-hidden transition-all duration-300 ${isHeaderCollapsed ? 'h-1.5' : 'h-2 md:h-2.5'}`}>
+                                            <motion.div
+                                                className="h-full bg-gradient-to-r from-primary to-indigo-600 rounded-full"
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${progressPercent}%` }}
+                                                transition={{ type: "spring", stiffness: 50, damping: 15 }}
+                                            />
                                         </div>
                                     </div>
-
-                                    <motion.div
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-mono text-lg font-bold shadow-sm transition-colors duration-300 ${timeLeft < 60 ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-white text-primary border border-gray-100'
-                                            }`}
-                                        animate={timeLeft < 60 ? { scale: [1, 1.05, 1] } : {}}
-                                        transition={{ repeat: Infinity, duration: 1 }}
-                                    >
-                                        <Clock className={`w-5 h-5 ${timeLeft < 60 ? 'animate-pulse' : ''}`} />
-                                        {formatTime(timeLeft)}
-                                    </motion.div>
                                 </div>
+                            </motion.div>
+                        </div>
 
-                                {/* Progress Bar */}
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                        <span>Progress</span>
-                                        <span>{answeredCount} / {totalQuestions} Answered</span>
-                                    </div>
-                                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                        <motion.div
-                                            className="h-full bg-gradient-to-r from-primary to-indigo-600 rounded-full"
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${progressPercent}%` }}
-                                            transition={{ type: "spring", stiffness: 50, damping: 15 }}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
+                        {/* Spacer to prevent content from going under the fixed header */}
+                        <div style={{ height: `${headerHeight}px` }} className="transition-all duration-300" />
 
                         {/* Questions List */}
-                        <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+                        <div className="max-w-4xl mx-auto px-4 pt-12 pb-32 space-y-8 min-h-[50vh]">
                             {quiz.questions.map((q, idx) => (
                                 <motion.div
                                     key={q.id}

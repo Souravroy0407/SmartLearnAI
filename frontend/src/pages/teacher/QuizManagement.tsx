@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2, User, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2, User, ChevronRight, ArrowLeft, MoreVertical, Edit } from 'lucide-react';
 
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
@@ -333,6 +333,8 @@ const QuizManagement = () => {
     const [selectedAnalyticsQuiz, setSelectedAnalyticsQuiz] = useState<Quiz | null>(null);
 
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
+    const [quizToEdit, setQuizToEdit] = useState<number | null>(null);
+    const [activeMenu, setActiveMenu] = useState<number | null>(null);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     // --- DRILL-DOWN STATE ---
@@ -534,14 +536,60 @@ const QuizManagement = () => {
                     ) : (
                         filteredQuizzes.map((quiz) => (
                             <div key={quiz.id} className="group bg-white border border-gray-100 rounded-3xl p-6 hover:shadow-xl hover:shadow-gray-200/50 hover:border-primary/20 transition-all duration-300 relative flex flex-col">
-                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
-                                    <button
-                                        onClick={() => handleDeleteClick(quiz.id)}
-                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                                        title="Delete Quiz"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                <div className={`absolute top-4 right-4 z-10 ${activeMenu === quiz.id ? 'opacity-100' : 'md:opacity-0 group-hover:opacity-100'} transition-all`}>
+                                    <div className="relative">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenu(activeMenu === quiz.id ? null : quiz.id);
+                                            }}
+                                            className={`p-2 rounded-xl transition-all active:scale-95 ${activeMenu === quiz.id ? 'bg-primary text-white shadow-lg' : 'bg-white/80 backdrop-blur-sm border border-gray-100 text-gray-500 hover:text-primary hover:border-primary/30'}`}
+                                            title="Actions"
+                                        >
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+
+                                        {activeMenu === quiz.id && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-10"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveMenu(null);
+                                                    }}
+                                                />
+                                                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-2xl shadow-2xl z-20 py-2 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setQuizToEdit(quiz.id);
+                                                            setShowCreator(true);
+                                                            setActiveMenu(null);
+                                                        }}
+                                                        className="w-full px-4 py-3 text-left text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                                                    >
+                                                        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                                                            <Edit className="w-4 h-4" />
+                                                        </div>
+                                                        Edit Quiz
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteClick(quiz.id);
+                                                            setActiveMenu(null);
+                                                        }}
+                                                        className="w-full px-4 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors border-t border-gray-50"
+                                                    >
+                                                        <div className="p-1.5 bg-red-50 text-red-600 rounded-lg">
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </div>
+                                                        Delete Quiz
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="flex justify-between items-start mb-6">
@@ -685,7 +733,19 @@ const QuizManagement = () => {
                 />
             )}
 
-            {showCreator && <QuizCreator onClose={() => setShowCreator(false)} onSuccess={() => fetchQuizzes(true)} />}
+            {showCreator && (
+                <QuizCreator
+                    editQuizId={quizToEdit}
+                    onClose={() => {
+                        setShowCreator(false);
+                        setQuizToEdit(null);
+                    }}
+                    onSuccess={() => {
+                        fetchQuizzes(true);
+                        setToast({ message: quizToEdit ? "Quiz updated successfully" : "Quiz published successfully", type: "success" });
+                    }}
+                />
+            )}
 
             {toast && (
                 <Toast

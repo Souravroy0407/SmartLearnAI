@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Search, User, Menu, LogOut, Settings, X, Camera, CheckCircle, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import api, { API_BASE_URL } from '../api/axios';
 import Cropper from 'react-easy-crop';
@@ -103,6 +104,23 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
             return () => clearTimeout(timer);
         }
     }, [toast]);
+
+    // Close dropdown on scroll
+    useEffect(() => {
+        const handleScroll = () => {
+            if (isDropdownOpen) {
+                setIsDropdownOpen(false);
+            }
+        };
+
+        if (isDropdownOpen) {
+            window.addEventListener('scroll', handleScroll, { passive: true });
+        }
+
+        return () => {
+            window.removeEventListener('scroll', handleScroll);
+        };
+    }, [isDropdownOpen]);
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         setToast({ message, type });
@@ -246,25 +264,45 @@ const Topbar = ({ onMenuClick }: TopbarProps) => {
                             </div>
                         </button>
 
-                        {/* Dropdown Menu */}
-                        {isDropdownOpen && (
-                            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-secondary-light/20 py-2 z-50">
-                                <button
-                                    onClick={() => { setIsEditModalOpen(true); setIsDropdownOpen(false); }}
-                                    className="w-full px-4 py-2 text-sm text-secondary-dark hover:bg-secondary-light/10 flex items-center gap-2"
-                                >
-                                    <Settings className="w-4 h-4" />
-                                    Edit Profile
-                                </button>
-                                <button
-                                    onClick={handleLogout}
-                                    className="w-full px-4 py-2 text-sm text-error hover:bg-error/10 flex items-center gap-2"
-                                >
-                                    <LogOut className="w-4 h-4" />
-                                    Logout
-                                </button>
-                            </div>
-                        )}
+                        {/* Dropdown Menu Container */}
+                        <AnimatePresence>
+                            {isDropdownOpen && (
+                                <>
+                                    {/* Transparent Backdrop for capturing clicks */}
+                                    <motion.div
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        onClick={() => setIsDropdownOpen(false)}
+                                        className="fixed inset-0 z-40 bg-black/5 sm:bg-transparent"
+                                    />
+
+                                    {/* Dropdown Menu */}
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                                        transition={{ duration: 0.15, ease: "easeOut" }}
+                                        className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-secondary-light/20 py-2 z-50 overflow-hidden"
+                                    >
+                                        <button
+                                            onClick={() => { setIsEditModalOpen(true); setIsDropdownOpen(false); }}
+                                            className="w-full px-4 py-2 text-sm text-secondary-dark hover:bg-secondary-light/10 flex items-center gap-2 transition-colors active:bg-secondary-light/20"
+                                        >
+                                            <Settings className="w-4 h-4" />
+                                            Edit Profile
+                                        </button>
+                                        <button
+                                            onClick={handleLogout}
+                                            className="w-full px-4 py-2 text-sm text-error hover:bg-error/10 flex items-center gap-2 transition-colors active:bg-error/20"
+                                        >
+                                            <LogOut className="w-4 h-4" />
+                                            Logout
+                                        </button>
+                                    </motion.div>
+                                </>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
