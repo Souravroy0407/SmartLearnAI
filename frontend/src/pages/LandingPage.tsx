@@ -519,7 +519,7 @@ const LandingPage = () => {
                         <div>
                             <h4 className="font-bold text-slate-900 mb-6">Company</h4>
                             <ul className="space-y-4 text-sm text-slate-600">
-                                <li><a href="#" className="hover:text-indigo-600 transition-colors">About</a></li>
+                                <li><Link to="/about-smartlearn-ai" className="hover:text-indigo-600 transition-colors">About</Link></li>
                                 <li><a href="#" className="hover:text-indigo-600 transition-colors">Blog</a></li>
                                 <li><a href="#" className="hover:text-indigo-600 transition-colors">Careers</a></li>
                             </ul>

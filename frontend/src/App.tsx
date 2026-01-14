@@ -20,6 +20,7 @@ import StudyPlanner from './pages/StudyPlanner';
 import DoubtSolver from './pages/DoubtSolver';
 import Analytics from './pages/Analytics';
 import LandingPage from './pages/LandingPage';
+import AboutSmartLearn from './pages/AboutSmartLearn';
 import UserManagement from './pages/admin/UserManagement'; // Import User Management
 import QuizManagement from './pages/teacher/QuizManagement'; // Import Quiz Management
 import CreateExam from './pages/teacher/CreateExam';
@@ -44,6 +45,7 @@ function App() {
                         <BrowserRouter>
                             <Routes>
                                 <Route path="/" element={<LandingPage />} />
+                                <Route path="/about-smartlearn-ai" element={<AboutSmartLearn />} />
                                 <Route path="/login" element={<LoginPage />} />
                                 <Route path="/signup" element={<SignupPage />} />
                                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
