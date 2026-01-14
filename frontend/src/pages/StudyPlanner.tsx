@@ -23,7 +23,6 @@ const StudyPlanner = () => {
         setUserEnergyPref,
         refreshGoals,
         refreshAll,
-        addTasksBulk,
         selectedDate,      // <--- ADDED
         setSelectedDate    // <--- ADDED
     } = useStudyPlanner();
