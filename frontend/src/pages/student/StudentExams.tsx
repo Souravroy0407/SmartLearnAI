@@ -104,7 +104,54 @@ const StudentExams = () => {
                 </div>
             ) : (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Mobile Card View */}
+                    <div className="block sm:hidden space-y-4 p-4 bg-gray-50/50">
+                        {exams.map((exam) => (
+                            <Link
+                                key={exam.id}
+                                to={`/dashboard/student-exams/${exam.id}`}
+                                className="block bg-white rounded-2xl p-5 shadow-sm border border-gray-100 active:scale-[0.98] transition-all cursor-pointer"
+                            >
+                                <div className="flex items-start justify-between gap-4 mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                            <FileText className="w-5 h-5 text-blue-500" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-gray-900 line-clamp-1">{exam.title}</h3>
+                                            <p className="text-xs text-secondary font-medium">{exam.subject} • <span className="capitalize">{exam.exam_type}</span></p>
+                                        </div>
+                                    </div>
+                                    <StatusBadge status={exam.status} />
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm text-gray-500 mt-4 pt-4 border-t border-gray-50">
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="w-4 h-4 text-gray-400" />
+                                        {exam.deadline ? (
+                                            new Date(exam.deadline).toLocaleDateString(undefined, {
+                                                month: 'short',
+                                                day: 'numeric'
+                                            })
+                                        ) : 'No Deadline'}
+                                    </div>
+
+                                    <div className="font-bold text-gray-900">
+                                        {exam.marks_obtained !== undefined && exam.marks_obtained !== null ? (
+                                            <span>
+                                                {exam.marks_obtained} <span className="text-gray-400 font-normal">/ {exam.total_marks}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400 uppercase text-xs font-semibold">Not Graded</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+
+                    {/* Desktop Table View */}
+                    <div className="hidden sm:block overflow-x-auto">
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100">
@@ -117,7 +164,7 @@ const StudentExams = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {exams.map((exam) => (
-                                    <tr key={exam.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <tr key={exam.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => window.location.href = `/dashboard/student-exams/${exam.id}`}>
                                         <td className="px-6 py-4">
                                             <Link to={`/dashboard/student-exams/${exam.id}`} className="block group">
                                                 <div className="flex items-start gap-3">

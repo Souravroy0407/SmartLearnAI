@@ -26,6 +26,27 @@
   body {
     @apply bg-background text-secondary-dark antialiased;
   }
+  
+  /* Global Cursor Fixes */
+  button, 
+  [role="button"],
+  a,
+  input[type="submit"],
+  input[type="reset"],
+  input[type="button"],
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
+
+  /* Disable cursor pointer for disabled elements */
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  input:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
 }
 
 @keyframes blob {
