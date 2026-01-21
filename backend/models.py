@@ -271,6 +271,11 @@ class ExamEvaluation(Base):
     feedback = Column(Text)
     is_final = Column(Boolean)
     checked_at = Column(DateTime(timezone=True))
+    
+    # Optional Feedback File
+    feedback_file_data = Column(LargeBinary)
+    feedback_file_mime = Column(String(50))
+    feedback_file_name = Column(String(255))
 
 class ExamReevaluation(Base):
     __tablename__ = "exam_reevaluations"

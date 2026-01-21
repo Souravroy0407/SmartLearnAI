@@ -397,10 +397,12 @@ class EvaluateExamRequest(BaseModel):
     feedback: str
 
 @router.post("/{exam_id}/evaluate/{student_id}")
-def evaluate_exam(
+async def evaluate_exam(
     exam_id: int,
     student_id: int,
-    request: EvaluateExamRequest,
+    marks: int = Form(...),
+    feedback: str = Form(...),
+    file: UploadFile = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -416,7 +418,7 @@ def evaluate_exam(
         raise HTTPException(status_code=403, detail="You can only evaluate your own exams")
 
     # 3. Validation: Marks limit
-    if request.marks > exam.total_marks:
+    if marks > exam.total_marks:
         raise HTTPException(status_code=400, detail=f"Marks cannot exceed total marks ({exam.total_marks})")
 
     # 4. Validation: Assignment Status (Must be submitted)
@@ -446,12 +448,24 @@ def evaluate_exam(
     if existing_eval:
          raise HTTPException(status_code=400, detail="Exam already evaluated")
 
+    # Process File if any
+    file_data = None
+    file_mime = None
+    file_name = None
+    if file:
+        file_data = await file.read()
+        file_mime = file.content_type
+        file_name = file.filename
+
     # 7. Save Evaluation
     evaluation = ExamEvaluation(
         submission_id=submission.id,
         checked_by="teacher",
-        marks=request.marks,
-        feedback=request.feedback,
+        marks=marks,
+        feedback=feedback,
+        feedback_file_data=file_data,
+        feedback_file_mime=file_mime,
+        feedback_file_name=file_name,
         is_final=True,
         checked_at=datetime.now(timezone.utc)
     )
@@ -477,9 +491,9 @@ def evaluate_exam(
          email_body = get_exam_checked_template(
              student_name=student_user.full_name,
              exam_title=exam.title,
-             marks_obtained=request.marks,
+             marks_obtained=marks,
              total_marks=exam.total_marks,
-             feedback=request.feedback
+             feedback=feedback
          )
          try:
              send_email(student_user.email, email_subject, email_body)
@@ -558,10 +572,12 @@ def request_reevaluation(
 
 
 @router.post("/{exam_id}/reevaluate/{student_id}")
-def reevaluate_exam(
+async def reevaluate_exam(
     exam_id: int,
     student_id: int,
-    request: EvaluateExamRequest, # Re-use Evaluate marks/feedback model
+    marks: int = Form(...),
+    feedback: str = Form(...),
+    file: UploadFile = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -573,7 +589,7 @@ def reevaluate_exam(
     if not exam or exam.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not your exam")
         
-    if request.marks > exam.total_marks:
+    if marks > exam.total_marks:
         raise HTTPException(status_code=400, detail=f"Marks cannot exceed total marks ({exam.total_marks})")
 
     # 2. Get Assignment
@@ -601,8 +617,14 @@ def reevaluate_exam(
          raise HTTPException(status_code=404, detail="Original evaluation not found")
 
     # 5. Update Evaluation
-    evaluation.marks = request.marks
-    evaluation.feedback = request.feedback
+    evaluation.marks = marks
+    evaluation.feedback = feedback
+    
+    if file:
+        file_data = await file.read()
+        evaluation.feedback_file_data = file_data
+        evaluation.feedback_file_mime = file.content_type
+        evaluation.feedback_file_name = file.filename
     # Keep checked_by as "teacher" or maybe update it? 
     # Or maybe create a new evaluation row? 
     # Requirement: "Update marks and feedback in exam_evaluations" -> implies update existing row.
@@ -630,7 +652,7 @@ def reevaluate_exam(
          email_body = get_reeval_completed_template(
              student_name=student_user.full_name,
              exam_title=exam.title,
-             final_marks=request.marks,
+             final_marks=marks,
              total_marks=exam.total_marks
          )
          try:
@@ -821,7 +843,10 @@ def get_student_exam_details(
         "marks_obtained": None,
         "feedback": None,
         "reeval_reason": None,
-        "submitted_at": None
+        "submitted_at": None,
+        "has_feedback_file": False,
+        "feedback_file_mime": None,
+        "feedback_file_name": None
     }
 
     # Fetch Submission
@@ -836,6 +861,12 @@ def get_student_exam_details(
         if evaluation:
             final_response["marks_obtained"] = evaluation.marks
             final_response["feedback"] = evaluation.feedback
+            
+            # Start: Feedback File
+            final_response["has_feedback_file"] = bool(evaluation.feedback_file_data)
+            final_response["feedback_file_mime"] = evaluation.feedback_file_mime
+            final_response["feedback_file_name"] = evaluation.feedback_file_name
+            # End: Feedback File
     
     if assignment.status in ["reeval_requested", "re_evaluated"]:
          reeval = db.query(ExamReevaluation).filter(ExamReevaluation.assignment_id == assignment.id).first()
@@ -1173,9 +1204,57 @@ def get_evaluation_metadata(
         },
         "evaluation": {
             "marks": evaluation.marks if evaluation else None,
-            "feedback": evaluation.feedback if evaluation else None
+            "feedback": evaluation.feedback if evaluation else None,
+            "has_feedback_file": bool(evaluation.feedback_file_data) if evaluation else False,
+            "feedback_file_mime": evaluation.feedback_file_mime if evaluation else None,
+            "feedback_file_name": evaluation.feedback_file_name if evaluation else None
         }
     }
+
+@router.get("/{exam_id}/evaluation/{student_id}/download-feedback")
+def download_feedback_file(
+    exam_id: int,
+    student_id: int,
+    disposition: str = "inline",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Validation: Accessible by Teacher (Owner) OR Student (Assigned)
+    exam = db.query(Exam).filter(Exam.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user.role == "teacher":
+        if exam.teacher_id != current_user.id:
+             raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "student":
+        if current_user.id != student_id:
+             # Students can only see their own
+             raise HTTPException(status_code=403, detail="Access denied")
+    else:
+         raise HTTPException(status_code=403, detail="Access denied")
+
+    # 2. Get Submission -> Evaluation
+    submission = db.query(ExamSubmission).filter(
+        ExamSubmission.exam_id == exam_id,
+        ExamSubmission.student_id == student_id
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    evaluation = db.query(ExamEvaluation).filter(ExamEvaluation.submission_id == submission.id).first()
+    if not evaluation or not evaluation.feedback_file_data:
+        raise HTTPException(status_code=404, detail="No feedback file found")
+
+    file_name = evaluation.feedback_file_name or "feedback.pdf"
+    mime_type = evaluation.feedback_file_mime or "application/pdf"
+
+    return StreamingResponse(
+        io.BytesIO(evaluation.feedback_file_data),
+        media_type=mime_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{file_name}"'}
+    )
 
 @router.delete("/{exam_id}")
 def delete_exam(

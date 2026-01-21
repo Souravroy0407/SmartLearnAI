@@ -7,7 +7,9 @@ import {
     FileText,
     AlertCircle,
     CheckCircle2,
-    Eye
+    Eye,
+    X,
+    Paperclip
 } from 'lucide-react';
 import axios from '../../api/axios';
 
@@ -24,6 +26,7 @@ export default function ExamEvaluation() {
     const [feedback, setFeedback] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [feedbackFile, setFeedbackFile] = useState<File | null>(null);
 
     // Loading States for Blobs
     const [isLoadingPaper, setIsLoadingPaper] = useState(false);
@@ -98,15 +101,20 @@ export default function ExamEvaluation() {
                 throw new Error(`Marks must be between 0 and ${data.exam.total_marks}`);
             }
 
+            const formData = new FormData();
+            formData.append('marks', marksInt.toString());
+            formData.append('feedback', feedback);
+            if (feedbackFile) {
+                formData.append('file', feedbackFile);
+            }
+
             if (data.submission.status === 'reeval_requested') {
-                await axios.post(`/api/exams/${examId}/reevaluate/${studentId}`, {
-                    marks: marksInt,
-                    feedback: feedback
+                await axios.post(`/api/exams/${examId}/reevaluate/${studentId}`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
                 });
             } else {
-                await axios.post(`/api/exams/${examId}/evaluate/${studentId}`, {
-                    marks: marksInt,
-                    feedback: feedback
+                await axios.post(`/api/exams/${examId}/evaluate/${studentId}`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
                 });
             }
 
@@ -369,9 +377,63 @@ export default function ExamEvaluation() {
                                         value={feedback}
                                         onChange={e => setFeedback(e.target.value)}
                                         disabled={isReadOnly}
-                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none disabled:bg-gray-50 disabled:text-gray-500 resize-none text-sm"
                                         placeholder="Write your feedback..."
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        Attachment (Optional)
+                                    </label>
+
+                                    {!feedbackFile ? (
+                                        <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors cursor-pointer relative">
+                                            <input
+                                                type="file"
+                                                accept=".pdf,image/*"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        setFeedbackFile(e.target.files[0]);
+                                                    }
+                                                }}
+                                                disabled={isReadOnly}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                            />
+                                            <div className="flex flex-col items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center">
+                                                    <Paperclip className="w-4 h-4" />
+                                                </div>
+                                                <span className="text-sm text-gray-500 font-medium">Attach PDF or Image</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
+                                                    <FileText className="w-4 h-4" />
+                                                </div>
+                                                <span className="text-sm font-medium text-gray-700 truncate max-w-[150px]">
+                                                    {feedbackFile.name}
+                                                </span>
+                                            </div>
+                                            {!isReadOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFeedbackFile(null)}
+                                                    className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg transition-colors"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {/* Show existing file info if implemented in read-only mode, but for now we focus on input */}
+                                    {data.evaluation.has_feedback_file && !feedbackFile && (
+                                        <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3 text-green-600" />
+                                            Previously attached: {data.evaluation.feedback_file_name || "File"}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {!isReadOnly && (
