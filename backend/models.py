@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text, UniqueConstraint, Index, ForeignKeyConstraint
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from database import Base
@@ -45,6 +45,7 @@ class Teacher(Base):
 
     user = relationship("User", back_populates="teacher_profile")
     quizzes = relationship("Quiz", back_populates="teacher")
+    batches = relationship("TeacherBatch", back_populates="teacher")
 
 # ===================== STUDENTS =====================
 
@@ -53,6 +54,7 @@ class Student(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=False)
     full_name = Column(String(255))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     user = relationship("User", back_populates="student_profile")
@@ -289,3 +291,36 @@ class ExamEvent(Base):
     event_type = Column(String(50))
     triggered_by = Column(String(50))
     event_time = Column(DateTime(timezone=True))
+
+# ===================== BATCH MANAGEMENT =====================
+
+class TeacherBatch(Base):
+    __tablename__ = "teacher_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    teacher = relationship("Teacher", back_populates="batches")
+
+    __table_args__ = (
+        UniqueConstraint('teacher_id', 'name', name='uix_teacher_batch_name'),
+        Index('uix_teacher_default_batch', 'teacher_id', unique=True, postgresql_where=(is_default == True)),
+    )
+
+class StudentBatchMap(Base):
+    __tablename__ = "student_batch_map"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    batch_id = Column(Integer, ForeignKey("teacher_batches.id"), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('teacher_id', 'student_id', name='uix_teacher_student_map'),
+    )
+
