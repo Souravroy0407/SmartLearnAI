@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
     Users, Search, X, GraduationCap, Calendar,
     Plus, MoreHorizontal, ChevronRight, Megaphone,
-    AlertCircle, CheckCircle
+    AlertCircle, CheckCircle, ClipboardCheck, Clock
 } from 'lucide-react';
 import axios from '../../api/axios';
 import clsx from 'clsx';
@@ -36,11 +36,28 @@ interface FailedRecipient {
     reason: string;
 }
 
+interface AttendanceStudent {
+    student_id: number;
+    full_name: string;
+    username: string;
+    status: 'P' | 'A' | 'TA' | null;
+}
+
+interface AttendanceSessionResponse {
+    batch_id: number;
+    date: string;
+    is_open: boolean;
+    is_edit: boolean;
+    updated_at: string | null;
+    students: AttendanceStudent[];
+}
+
 const TeacherStudentList = () => {
     // --- State ---
     const [batches, setBatches] = useState<Batch[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
+    const [viewMode, setViewMode] = useState<'list' | 'attendance'>('list');
 
     const [loadingStudents, setLoadingStudents] = useState(false);
 
@@ -182,6 +199,7 @@ const TeacherStudentList = () => {
     useEffect(() => {
         if (selectedBatchId !== null) {
             fetchStudents();
+            setViewMode('list'); // Reset view on batch change
         }
     }, [selectedBatchId]);
 
@@ -265,11 +283,13 @@ const TeacherStudentList = () => {
 
             {/* Main Student List Section */}
             <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden min-h-[600px] flex flex-col">
+
+
                 {/* Toolbar */}
                 <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-gray-500">
-                            <GraduationCap className="w-5 h-5" />
+                            {viewMode === 'list' ? <GraduationCap className="w-5 h-5" /> : <ClipboardCheck className="w-5 h-5" />}
                         </div>
                         <div>
                             <h2 className="font-bold text-lg text-gray-900">
@@ -277,7 +297,7 @@ const TeacherStudentList = () => {
                             </h2>
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                                    {students.length} Total
+                                    {viewMode === 'list' ? `${students.length} Total` : 'Attendance'}
                                 </span>
                                 {areActionsDisabled && (
                                     <span className="bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
@@ -288,21 +308,54 @@ const TeacherStudentList = () => {
                         </div>
                     </div>
 
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search students..."
-                            className="pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary w-full sm:w-64 transition-all"
-                        />
+                    {/* View Switcher & Search */}
+                    <div className="flex items-center gap-3">
+                        {selectedBatch && !selectedBatch.is_default && (
+                            <div className="flex bg-gray-100 p-1 rounded-xl">
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={clsx(
+                                        "px-3 py-1.5 rounded-lg text-sm font-bold transition-all",
+                                        viewMode === 'list' ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                                    )}
+                                >
+                                    Students
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('attendance')}
+                                    className={clsx(
+                                        "px-3 py-1.5 rounded-lg text-sm font-bold transition-all",
+                                        viewMode === 'attendance' ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                                    )}
+                                >
+                                    Attendance
+                                </button>
+                            </div>
+                        )}
+
+                        {viewMode === 'list' && (
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search students..."
+                                    className="pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary w-full sm:w-64 transition-all"
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* List Content */}
                 <div className="flex-1 overflow-x-auto">
-                    {loadingStudents ? (
+                    {viewMode === 'attendance' && selectedBatch ? (
+                        <AttendanceView
+                            batchId={selectedBatch.batch_id}
+                            showToast={showToast}
+                        />
+                    ) : loadingStudents ? (
                         <div className="flex flex-col items-center justify-center h-96 text-gray-400">
                             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3"></div>
                             <span className="text-sm font-medium">Loading students...</span>
@@ -342,24 +395,28 @@ const TeacherStudentList = () => {
             </div>
 
             {/* Batch Modal */}
-            {isModalOpen && (
-                <BatchModal
-                    batch={editingBatch}
-                    onClose={() => setIsModalOpen(false)}
-                    onSave={handleSaveBatch}
-                    showToast={showToast}
-                />
-            )}
+            {
+                isModalOpen && (
+                    <BatchModal
+                        batch={editingBatch}
+                        onClose={() => setIsModalOpen(false)}
+                        onSave={handleSaveBatch}
+                        showToast={showToast}
+                    />
+                )
+            }
 
             {/* Announcement Modal */}
-            {isAnnouncementOpen && announcementBatch && (
-                <AnnouncementModal
-                    batch={announcementBatch}
-                    onClose={() => setIsAnnouncementOpen(false)}
-                    onSend={handleSendAnnouncement}
-                />
-            )}
-        </div>
+            {
+                isAnnouncementOpen && announcementBatch && (
+                    <AnnouncementModal
+                        batch={announcementBatch}
+                        onClose={() => setIsAnnouncementOpen(false)}
+                        onSend={handleSendAnnouncement}
+                    />
+                )
+            }
+        </div >
     );
 };
 
@@ -651,6 +708,192 @@ const BatchModal = ({ batch, onClose, onSave, showToast }: any) => {
                     <button onClick={onClose} className="flex-1 px-4 py-3 bg-white text-gray-600 font-bold rounded-xl border border-gray-200 hover:bg-gray-50">Cancel</button>
                     <button onClick={handleSubmit} className="flex-1 px-4 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark shadow-lg shadow-primary/20">Save Batch</button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const AttendanceView = ({ batchId, showToast }: { batchId: number, showToast: any }) => {
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [sessionData, setSessionData] = useState<AttendanceSessionResponse | null>(null);
+    const [marks, setMarks] = useState<{ [studentId: number]: 'P' | 'A' | 'TA' }>({});
+
+    useEffect(() => {
+        fetchAttendance();
+    }, [batchId]);
+
+    const fetchAttendance = async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get(`/api/batches/${batchId}/attendance/today`);
+            setSessionData(res.data);
+
+            // Initialize marks
+            const initialMarks: any = {};
+            res.data.students.forEach((s: AttendanceStudent) => {
+                initialMarks[s.student_id] = s.status || 'A'; // Default to Absent if null
+            });
+            setMarks(initialMarks);
+        } catch (err: any) {
+            console.error("Failed to fetch attendance", err);
+            showToast(err.response?.data?.detail || "Failed to load attendance", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const records = Object.entries(marks).map(([studentId, status]) => ({
+                student_id: parseInt(studentId),
+                status
+            }));
+            await axios.post(`/api/batches/${batchId}/attendance`, records);
+            showToast("Attendance saved successfully");
+            fetchAttendance(); // Refresh to confirm
+        } catch (err: any) {
+            console.error("Failed to save attendance", err);
+            showToast(err.response?.data?.detail || "Failed to save attendance", "error");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleBulkSet = (status: 'P' | 'A' | 'TA') => {
+        if (!sessionData) return;
+        const newMarks = { ...marks };
+        sessionData.students.forEach(s => {
+            newMarks[s.student_id] = status;
+        });
+        setMarks(newMarks);
+    };
+
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-96 text-gray-400">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3"></div>
+                Loading attendance...
+            </div>
+        );
+    }
+
+    if (!sessionData) return <div className="p-8 text-center text-gray-500">Failed to load session.</div>;
+
+    const areAllTA = Object.values(marks).every(v => v === 'TA') && sessionData.students.length > 0;
+
+    return (
+        <div className="p-8">
+            {/* Header / Info */}
+            <div className="flex items-center justify-between mb-8 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                <div className="flex items-center gap-4">
+                    <div className={clsx("w-12 h-12 rounded-full flex items-center justify-center", sessionData.is_open ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600")}>
+                        <Clock className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-gray-900">
+                            {sessionData.is_open ? "Attendance Open" : "Attendance Closed"}
+                        </h3>
+                        <p className="text-sm text-gray-500 flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            {new Date(sessionData.date).toDateString()}
+                            {sessionData.updated_at && (
+                                <span className="text-xs text-gray-400 border-l pl-2 ml-2">
+                                    Last updated: {new Date(sessionData.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                            )}
+                        </p>
+                    </div>
+                </div>
+
+                {!sessionData.is_open && (
+                    <div className="bg-white px-4 py-2 rounded-lg text-xs font-bold text-red-500 border border-red-100 shadow-sm">
+                        Class not started or not scheduled for today.
+                    </div>
+                )}
+            </div>
+
+            {areAllTA && (
+                <div className="mb-6 p-3 bg-yellow-50 text-yellow-800 rounded-lg text-sm font-medium flex items-center gap-2 border border-yellow-200">
+                    <AlertCircle className="w-4 h-4" />
+                    Class marked as not conducted (Teacher Absent).
+                </div>
+            )}
+
+            {/* List */}
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="border-b border-gray-100">
+                        <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider pl-8">Student</th>
+                        <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                    {sessionData.students.map(student => (
+                        <tr key={student.student_id} className="hover:bg-gray-50/50">
+                            <td className="py-4 px-6 pl-8 font-medium text-gray-800">
+                                {student.full_name}
+                                <div className="text-xs text-gray-400 font-normal">@{student.username}</div>
+                            </td>
+                            <td className="py-4 px-6 flex justify-center">
+                                {/* Radio Group */}
+                                <div className="bg-gray-100 p-1 rounded-lg flex items-center gap-1">
+                                    {(['P', 'A', 'TA'] as const).map((status) => (
+                                        <label
+                                            key={status}
+                                            className={clsx(
+                                                "cursor-pointer px-4 py-1.5 rounded-md text-sm font-bold transition-all",
+                                                marks[student.student_id] === status
+                                                    ? {
+                                                        'P': "bg-green-500 text-white shadow-sm",
+                                                        'A': "bg-red-500 text-white shadow-sm",
+                                                        'TA': "bg-yellow-500 text-white shadow-sm"
+                                                    }[status]
+                                                    : "text-gray-500 hover:bg-gray-200"
+                                            )}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name={`status-${student.student_id}`}
+                                                value={status}
+                                                checked={marks[student.student_id] === status}
+                                                onChange={() => setMarks(prev => ({ ...prev, [student.student_id]: status }))}
+                                                disabled={!sessionData.is_open}
+                                                className="hidden"
+                                            />
+                                            {status}
+                                        </label>
+                                    ))}
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                    {sessionData.students.length === 0 && (
+                        <tr>
+                            <td colSpan={2} className="py-8 text-center text-gray-400">No students in this batch.</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+
+            {/* Footer Actions */}
+            <div className="mt-8 flex justify-between items-center bg-gray-50 p-6 rounded-xl border border-gray-100">
+                <div className="text-xs text-gray-400 font-bold uppercase tracking-wider">
+                    Bulk Actions:
+                    <button onClick={() => handleBulkSet('P')} disabled={!sessionData.is_open} className="ml-2 hover:text-primary disabled:opacity-50">Mark All Present</button>
+                    <span className="mx-2">|</span>
+                    <button onClick={() => handleBulkSet('A')} disabled={!sessionData.is_open} className="hover:text-primary disabled:opacity-50">Mark All Absent</button>
+                </div>
+
+                <button
+                    onClick={handleSave}
+                    disabled={!sessionData.is_open || saving || sessionData.students.length === 0}
+                    className="px-6 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
+                >
+                    {saving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                    {saving ? "Saving..." : (sessionData.is_edit ? "Save Changes" : "Save Daily Attendance")}
+                </button>
             </div>
         </div>
     );

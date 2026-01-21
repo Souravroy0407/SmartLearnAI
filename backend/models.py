@@ -314,10 +314,13 @@ class TeacherBatch(Base):
 
     teacher = relationship("Teacher", back_populates="batches")
 
+
     __table_args__ = (
         UniqueConstraint('teacher_id', 'name', name='uix_teacher_batch_name'),
         Index('uix_teacher_default_batch', 'teacher_id', unique=True, postgresql_where=(is_default == True)),
     )
+
+    attendance_sessions = relationship("AttendanceSession", back_populates="batch", cascade="all, delete-orphan")
 
 class StudentBatchMap(Base):
     __tablename__ = "student_batch_map"
@@ -330,5 +333,42 @@ class StudentBatchMap(Base):
 
     __table_args__ = (
         UniqueConstraint('teacher_id', 'student_id', name='uix_teacher_student_map'),
+    )
+
+# ===================== ATTENDANCE =====================
+
+class AttendanceSession(Base):
+    __tablename__ = "attendance_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("teacher_batches.id"), nullable=False)
+    attendance_date = Column(Date, nullable=False)
+    created_by = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Constraints: One session per batch per day
+    __table_args__ = (
+        UniqueConstraint('batch_id', 'attendance_date', name='uix_batch_date_attendance'),
+    )
+
+    batch = relationship("TeacherBatch", back_populates="attendance_sessions")
+    records = relationship("AttendanceRecord", back_populates="session", cascade="all, delete-orphan")
+
+
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("attendance_sessions.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    status = Column(String(10), nullable=False) # 'P', 'A', 'TA'
+    marked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    session = relationship("AttendanceSession", back_populates="records")
+    student = relationship("Student")
+
+    __table_args__ = (
+        UniqueConstraint('session_id', 'student_id', name='uix_session_student_record'),
     )
 

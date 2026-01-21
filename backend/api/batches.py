@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from database import get_db
-from models import TeacherBatch, StudentBatchMap, Student, User
+from models import TeacherBatch, StudentBatchMap, Student, User, AttendanceSession, AttendanceRecord
 from auth import get_current_user
 from pydantic import BaseModel
-from datetime import datetime, time
+from datetime import datetime, time, date, timezone
 from utils.brevo_email import send_email
 from utils.email_templates import get_batch_announcement_template
 
@@ -84,6 +84,26 @@ class AnnounceResponse(BaseModel):
     failed_count: int
     failed_recipients: List[FailedRecipient]
     message: str
+
+class AttendanceRecordRequest(BaseModel):
+    student_id: int
+    status: str
+
+class AttendanceStudentResponse(BaseModel):
+    student_id: int
+    full_name: str
+    username: str
+    status: Optional[str] = None # 'P', 'A', 'TA', or None if not marked
+
+class AttendanceSessionResponse(BaseModel):
+    batch_id: int
+    date: date
+    is_open: bool # If attendance can be marked (time check)
+    is_edit: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    students: List[AttendanceStudentResponse]
+
 
 # --- In-Memory Rate Limiter ---
 # Dictionary to store timestamps of announcements: { batch_id: [datetime, datetime, ...] }
@@ -591,3 +611,182 @@ def send_batch_announcement(
         failed_recipients=failed_recipients,
         message="Announcement process completed."
     )
+
+# --- Attendance Endpoints ---
+
+@router.get("/{batch_id}/attendance/today", response_model=AttendanceSessionResponse)
+def get_todays_attendance(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    teacher = Depends(get_current_user) # Using user then checking profile
+):
+    # 0. Get Teacher Profile
+    if teacher.role != "teacher" or not teacher.teacher_profile:
+         raise HTTPException(status_code=403, detail="Access restricted to teachers only")
+    teacher_profile = teacher.teacher_profile
+
+    # 1. Fetch Batch
+    batch = db.query(TeacherBatch).filter(
+        TeacherBatch.id == batch_id,
+        TeacherBatch.teacher_id == teacher_profile.id
+    ).first()
+
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    # 2. Check Constraints
+    today = date.today()
+    now = datetime.now()
+    current_time = now.time()
+    
+    # Run Day Check
+    # run_days usually ["Mon", "Tue"...]
+    # weekday() -> 0=Mon, 6=Sun
+    days_map = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    today_str = days_map[today.weekday()]
+    
+    is_run_day = batch.run_days and today_str in batch.run_days
+    
+    # Time Check
+    # Attendance open if current_time >= start_time (and maybe <= end_time? Requirement says "allowed after class start time")
+    is_time_valid = True
+    if batch.start_time:
+        if current_time < batch.start_time:
+            is_time_valid = False
+            
+    is_open = is_run_day and is_time_valid and batch.status == 'active'
+
+    # 3. Fetch Existing Session & Records
+    session = db.query(AttendanceSession).filter(
+        AttendanceSession.batch_id == batch.id,
+        AttendanceSession.attendance_date == today
+    ).first()
+
+    records_map = {}
+    if session:
+        records = db.query(AttendanceRecord).filter(AttendanceRecord.session_id == session.id).all()
+        for r in records:
+            records_map[r.student_id] = r.status
+
+    # 4. Fetch Students
+    students = db.query(Student).join(
+        StudentBatchMap, Student.id == StudentBatchMap.student_id
+    ).filter(
+        StudentBatchMap.batch_id == batch.id
+    ).all()
+
+    # 5. Build Response
+    student_responses = []
+    for s in students:
+        student_responses.append(AttendanceStudentResponse(
+            student_id=s.id,
+            full_name=s.full_name,
+            username=s.username,
+            status=records_map.get(s.id) # None if not found
+        ))
+
+    return AttendanceSessionResponse(
+        batch_id=batch.id,
+        date=today,
+        is_open=bool(is_open),
+        is_edit=bool(session is not None),
+        created_at=session.created_at if session else None,
+        updated_at=session.updated_at if session else None,
+        students=student_responses
+    )
+
+@router.post("/{batch_id}/attendance", status_code=status.HTTP_200_OK)
+def save_attendance(
+    batch_id: int,
+    records: List[AttendanceRecordRequest],
+    db: Session = Depends(get_db),
+    teacher = Depends(get_current_user)
+):
+    # 0. Auth
+    if teacher.role != "teacher" or not teacher.teacher_profile:
+         raise HTTPException(status_code=403, detail="Access restricted to teachers only")
+    teacher_profile = teacher.teacher_profile
+
+    # 1. Fetch Batch
+    batch = db.query(TeacherBatch).filter(
+        TeacherBatch.id == batch_id,
+        TeacherBatch.teacher_id == teacher_profile.id
+    ).first()
+
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    # 2. Strict Validation (Enable/Disable Logic)
+    # Teacher cannot mark attendance for paused/completed batches
+    if batch.status != 'active':
+         raise HTTPException(status_code=400, detail="Cannot mark attendance for inactive batch.")
+
+    today = date.today()
+    days_map = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    today_str = days_map[today.weekday()]
+    
+    # Ensure today is a run day
+    if not batch.run_days or today_str not in batch.run_days:
+        # Check if user accidentally marking for wrong day? 
+        # Requirement: "Attendance must only be allowed after class start time."... IMPLIED "on class days".
+        # But maybe teacher wants to mark extra class?
+        # User Req: "Attendance button enabled ONLY IF ... Today in batch.run_days" -> So API should enforce.
+         raise HTTPException(status_code=400, detail=f"Today ({today_str}) is not a scheduled day for this batch.")
+
+    # Time Check
+    if batch.start_time:
+        if datetime.now().time() < batch.start_time:
+             raise HTTPException(status_code=400, detail="Cannot mark attendance before class start time.")
+
+    try:
+        # 3. Get or Create Session
+        item_session = db.query(AttendanceSession).filter(
+            AttendanceSession.batch_id == batch.id,
+            AttendanceSession.attendance_date == today
+        ).first()
+
+        if not item_session:
+            item_session = AttendanceSession(
+                batch_id=batch.id,
+                attendance_date=today,
+                created_by=teacher_profile.id,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.add(item_session)
+            db.flush() # Get ID
+        else:
+            # UPDATE existing session timestamp
+            item_session.updated_at = datetime.now(timezone.utc)
+
+        # 4. Save Records (Upsert logic)
+        # Fetch existing records to update them
+        existing_records = db.query(AttendanceRecord).filter(
+            AttendanceRecord.session_id == item_session.id
+        ).all()
+        existing_map = {r.student_id: r for r in existing_records}
+
+        valid_statuses = {"P", "A", "TA"}
+
+        for req in records:
+            if req.status not in valid_statuses:
+                continue # or raise error
+
+            if req.student_id in existing_map:
+                existing_map[req.student_id].status = req.status
+                existing_map[req.student_id].marked_at = datetime.now(timezone.utc)
+            else:
+                new_record = AttendanceRecord(
+                    session_id=item_session.id,
+                    student_id=req.student_id,
+                    status=req.status
+                )
+                db.add(new_record)
+        
+        db.commit()
+        return {"message": "Attendance saved successfully"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to save attendance: {str(e)}")
+
