@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text, UniqueConstraint, Index, ForeignKeyConstraint
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text, UniqueConstraint, Index, ForeignKeyConstraint, JSON, Time
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from database import Base
@@ -302,6 +302,14 @@ class TeacherBatch(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     is_default = Column(Boolean, default=False)
+    
+    # Scheduling & Lifecycle
+    run_days = Column(JSON, nullable=True)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    timezone = Column(String(50), nullable=True)
+    status = Column(String(20), default="active", nullable=False)
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     teacher = relationship("Teacher", back_populates="batches")
