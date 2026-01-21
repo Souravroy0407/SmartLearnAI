@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import chat, quiz, study_planner, ai, goals, admin, exams
+from api import chat, quiz, study_planner, ai, goals, admin, exams, batches
 import auth, models, database, users
 
 
@@ -21,6 +21,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["AI Task Generation"])
 app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
 app.include_router(admin.router)
 app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])
+app.include_router(batches.router, prefix="/api/batches", tags=["Batch Management"])
 
 
 app.include_router(users.router)
