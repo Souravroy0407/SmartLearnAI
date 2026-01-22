@@ -4,7 +4,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from database import get_db
 
-from models import Quiz, Question, Option, User, QuizAttempt, StudentAnswer, StudentTeacherFollow, Student, Teacher
+from models import Quiz, Question, Option, User, QuizAttempt, StudentAnswer, StudentTeacherFollow, Student, Teacher, QuizAssignment
 from pydantic import BaseModel
 from datetime import datetime
 import google.generativeai as genai
@@ -35,6 +35,7 @@ class QuizCreate(BaseModel):
     difficulty: Optional[str] = None # Optional, only for AI prompt
     subject: str 
     topic: Optional[str] = None # Optional Context
+    student_ids: Optional[List[int]] = None # List of User IDs
     questions: List[QuestionCreate]
 
 from datetime import datetime, timezone
@@ -83,21 +84,23 @@ def list_quizzes(db: Session = Depends(get_db), current_user: User = Depends(get
         if not current_user.student_profile:
              raise HTTPException(status_code=400, detail="Student profile not found")
         
-        follows = db.query(StudentTeacherFollow.teacher_id).filter(StudentTeacherFollow.student_id == current_user.student_profile.id).all()
-        followed_ids = [f.teacher_id for f in follows]
+        # New Flow: Filter by QuizAssignment
+        assignments = db.query(QuizAssignment.quiz_id).filter(
+            QuizAssignment.student_id == current_user.student_profile.id
+        ).all()
+        assigned_quiz_ids = [a.quiz_id for a in assignments]
         
-        # Fetch quizzes only from followed teachers
-        quizzes = db.query(Quiz).filter(Quiz.teacher_id.in_(followed_ids)).all()
+        quizzes = db.query(Quiz).filter(Quiz.id.in_(assigned_quiz_ids)).order_by(Quiz.created_at.desc()).all()
         
     elif current_user.role == "teacher":
         if not current_user.teacher_profile:
              raise HTTPException(status_code=400, detail="Teacher profile not found")
 
         # Fetch only own quizzes
-        quizzes = db.query(Quiz).filter(Quiz.teacher_id == current_user.teacher_profile.id).all()
+        quizzes = db.query(Quiz).filter(Quiz.teacher_id == current_user.teacher_profile.id).order_by(Quiz.created_at.desc()).all()
     else:
-        # Admin or others see all? Or nothing? Defaulting to all for Admin.
-        quizzes = db.query(Quiz).all()
+        # Admin or others see all
+        quizzes = db.query(Quiz).order_by(Quiz.created_at.desc()).all()
     
     # Optimize: Fetch all question counts in one query
     question_counts = db.query(Question.quiz_id, func.count(Question.id)).group_by(Question.quiz_id).all()
@@ -183,6 +186,14 @@ def start_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: User =
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
+
+    # Check Assignment
+    assignment = db.query(QuizAssignment).filter(
+        QuizAssignment.quiz_id == quiz_id,
+        QuizAssignment.student_id == student_id
+    ).first()
+    if not assignment:
+         raise HTTPException(status_code=403, detail="You are not assigned to this quiz")
 
     # Check for existing attempt
     attempt = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id, QuizAttempt.student_id == student_id).first()
@@ -455,6 +466,7 @@ def generate_quiz_ai(request: GenerateQuizRequest, current_user: User = Depends(
 
 @router.post("/")
 def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    print(f"DEBUG: create_quiz payload student_ids: {quiz_data.student_ids}")
     if not current_user.teacher_profile:
          raise HTTPException(status_code=400, detail="Teacher profile not found")
     teacher_id = current_user.teacher_profile.id
@@ -501,6 +513,26 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
     db.add(new_quiz)
     db.commit()
     db.refresh(new_quiz)
+    
+    # --- Create Assignments ---
+    if quiz_data.student_ids:
+        print(f"DEBUG: Processing assignments for student_ids: {quiz_data.student_ids}")
+        # Validate student IDs (Received Student.id from frontend)
+        # Optimization: Fetch all students once
+        target_students = db.query(Student).filter(Student.id.in_(quiz_data.student_ids)).all()
+        print(f"DEBUG: Found {len(target_students)} matching students in DB")
+        
+        for student in target_students:
+            assignment = QuizAssignment(
+                quiz_id=new_quiz.id,
+                student_id=student.id,
+                assigned_at=datetime.now(timezone.utc)
+            )
+            db.add(assignment)
+    else:
+        print("DEBUG: No student_ids provided in payload.")
+        pass # Allow creating quiz with no assignments initially? Requirement implies "Assignment is key". 
+             # For now, if empty, no one sees it. That's fine.
 
     for q_data in quiz_data.questions:
         new_question = Question(text=q_data.text, quiz_id=new_quiz.id)
@@ -518,10 +550,21 @@ def create_quiz(quiz_data: QuizCreate, db: Session = Depends(get_db), current_us
 
 
 @router.get("/{quiz_id}")
-def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
+def get_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
+        
+    # Check Access
+    if current_user.role == "student":
+        if not current_user.student_profile:
+             raise HTTPException(status_code=403, detail="Access denied")
+        assignment = db.query(QuizAssignment).filter(
+            QuizAssignment.quiz_id == quiz_id,
+            QuizAssignment.student_id == current_user.student_profile.id
+        ).first()
+        if not assignment:
+             raise HTTPException(status_code=403, detail="Access denied")
     
     questions = db.query(Question).filter(Question.quiz_id == quiz_id).all()
     

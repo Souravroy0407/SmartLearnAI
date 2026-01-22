@@ -59,6 +59,7 @@ class Student(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     user = relationship("User", back_populates="student_profile")
     quiz_attempts = relationship("QuizAttempt", back_populates="student")
+    quiz_assignments = relationship("QuizAssignment", back_populates="student")
 
 # ===================== ADMINS =====================
 
@@ -99,6 +100,7 @@ class Quiz(Base):
 
     teacher = relationship("Teacher", back_populates="quizzes")
     attempts = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")
+    assignments = relationship("QuizAssignment", back_populates="quiz", cascade="all, delete-orphan")
 
 # ===================== QUIZ ATTEMPTS =====================
 
@@ -119,6 +121,20 @@ class QuizAttempt(Base):
 
     student = relationship("Student", back_populates="quiz_attempts")
     quiz = relationship("Quiz", back_populates="attempts")
+
+# ===================== QUIZ ASSIGNMENTS =====================
+
+class QuizAssignment(Base):
+    __tablename__ = "quiz_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status = Column(String(50), default="assigned") # assigned / attempted
+
+    student = relationship("Student", back_populates="quiz_assignments")
+    quiz = relationship("Quiz", back_populates="assignments")
 
 # ===================== QUESTIONS =====================
 

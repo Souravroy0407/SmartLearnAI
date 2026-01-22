@@ -17,9 +17,10 @@ interface QuizCreatorProps {
     onClose: () => void;
     onSuccess: () => void;
     editQuizId?: number | null;
+    studentIds?: number[];
 }
 
-const QuizCreator = ({ onClose, onSuccess, editQuizId }: QuizCreatorProps) => {
+const QuizCreator = ({ onClose, onSuccess, editQuizId, studentIds = [] }: QuizCreatorProps) => {
     const { user } = useAuth();
     const [title, setTitle] = useState('');
     const [subject, setSubject] = useState('');
@@ -199,7 +200,8 @@ const QuizCreator = ({ onClose, onSuccess, editQuizId }: QuizCreatorProps) => {
                 difficulty: null,
                 duration_minutes: parseInt(duration),
                 deadline: utcDeadline,
-                questions
+                questions,
+                student_ids: studentIds
             };
 
             if (editQuizId) {
