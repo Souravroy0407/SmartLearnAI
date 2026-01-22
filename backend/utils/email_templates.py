@@ -777,3 +777,72 @@ def get_exam_deadline_updated_template(student_name: str, exam_title: str, new_d
     </html>
     """
 
+
+def get_batch_announcement_template(teacher_name: str, batch_name: str, message: str, timestamp: str) -> str:
+    """
+    Returns text/HTML for a batch announcement email using table-based layout for better client compatibility.
+    """
+    current_year = datetime.now().year
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Announcement from {teacher_name}</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; padding: 40px 0;">
+            <tr>
+                <td align="center">
+                    <table border="0" cellpadding="0" cellspacing="0" width="550" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                        <!-- Header -->
+                        <tr>
+                            <td align="center" style="background-color: #3b82f6; padding: 24px;">
+                                <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                    {batch_name} Announcement
+                                </h1>
+                            </td>
+                        </tr>
+
+                        <!-- Content -->
+                        <tr>
+                            <td style="padding: 32px 24px;">
+                                <p style="color: #1e293b; font-size: 16px; font-weight: 600; margin: 0 0 16px 0; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                    Hello Student,
+                                </p>
+                                <p style="color: #475569; font-size: 16px; line-height: 1.5; margin: 0 0 24px 0; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                    Your teacher <strong>{teacher_name}</strong> has posted an announcement:
+                                </p>
+                                
+                                <!-- Message Box -->
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-left: 4px solid #3b82f6;">
+                                    <tr>
+                                        <td style="padding: 20px; color: #334155; font-size: 16px; line-height: 1.6; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                            {message.replace(chr(10), '<br>')}
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <!-- Timestamp -->
+                                <p style="color: #64748b; font-size: 13px; margin: 24px 0 0 0; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                    Posted on: {timestamp}
+                                </p>
+                            </td>
+                        </tr>
+
+                        <!-- Footer -->
+                        <tr>
+                            <td align="center" style="background-color: #f1f5f9; padding: 20px; border-top: 1px solid #e2e8f0;">
+                                <p style="color: #94a3b8; font-size: 12px; margin: 0; font-family: 'Inter', Helvetica, Arial, sans-serif;">
+                                    &copy; {current_year} SmartLearn AI
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """

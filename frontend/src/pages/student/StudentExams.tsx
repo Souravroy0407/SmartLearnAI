@@ -141,58 +141,100 @@ const StudentExams = () => {
                     </p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {exams.map((exam) => {
-                        const isExpired = exam.deadline ? new Date(exam.deadline) < new Date() : false;
-                        const uiStatus = exam.status === 'assigned' ? (isExpired ? 'EXPIRED' : 'ACTIVE') : 'SUBMITTED';
-
-                        return (
-                            <div
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    {/* Mobile Card View */}
+                    <div className="block sm:hidden space-y-4 p-4 bg-gray-50/50">
+                        {exams.map((exam) => (
+                            <Link
                                 key={exam.id}
-                                className={`
-                                    group bg-white border rounded-3xl p-6 relative flex flex-col
-                                    transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-gray-200/50
-                                    ${uiStatus === 'ACTIVE' ? 'border-gray-100 hover:border-primary/20' :
-                                        uiStatus === 'SUBMITTED' ? 'border-green-100 bg-green-50/10' :
-                                            'border-gray-100 bg-gray-50/50 opacity-90'}
-                                `}
+                                to={`/dashboard/student-exams/${exam.id}`}
+                                className="block bg-white rounded-2xl p-5 shadow-sm border border-gray-100 active:scale-[0.98] transition-all cursor-pointer"
                             >
-                                {/* Header: Status & Type */}
-                                <div className="flex justify-between items-start mb-5">
-                                    <ExamStatusBadge status={exam.status} isExpired={isExpired} />
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-500 rounded-xl border border-gray-100 text-xs font-bold uppercase tracking-wider shadow-sm">
-                                        {getExamTypeIcon(exam.exam_type)}
-                                        {exam.exam_type}
-                                    </div>
-                                </div>
-
-                                {/* Content: Title & Subject */}
-                                <div className="mb-4">
-                                    <h3 className="text-lg font-bold text-gray-900 line-clamp-2 group-hover:text-primary transition-colors min-h-[3.5rem] leading-tight mb-2">
-                                        {exam.title}
-                                    </h3>
-                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-primary/5 text-primary border border-primary/10">
-                                        {exam.subject}
-                                    </span>
-                                </div>
-
-                                {/* Stats: Marks & Deadline */}
-                                <div className="space-y-3 mb-6 mt-auto">
-                                    <div className="flex items-center justify-between p-3 bg-gray-50/50 rounded-2xl border border-gray-100/50">
-                                        <div className="flex items-center gap-2 text-gray-500">
-                                            <Calendar className="w-4 h-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Deadline</span>
+                                <div className="flex items-start justify-between gap-4 mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                            <FileText className="w-5 h-5 text-blue-500" />
                                         </div>
-                                        <span className={`text-sm font-bold ${isExpired && exam.status === 'assigned' ? 'text-red-500' : 'text-gray-700'}`}>
-                                            {exam.deadline ? formatDateTime(exam.deadline) : 'No Deadline'}
-                                        </span>
+                                        <div>
+                                            <h3 className="font-bold text-gray-900 line-clamp-1">{exam.title}</h3>
+                                            <p className="text-xs text-secondary font-medium">{exam.subject} • <span className="capitalize">{exam.exam_type}</span></p>
+                                        </div>
+                                    </div>
+                                    <StatusBadge status={exam.status} />
+                                </div>
+
+                                <div className="flex items-center justify-between text-sm text-gray-500 mt-4 pt-4 border-t border-gray-50">
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="w-4 h-4 text-gray-400" />
+                                        {exam.deadline ? (
+                                            new Date(exam.deadline).toLocaleDateString(undefined, {
+                                                month: 'short',
+                                                day: 'numeric'
+                                            })
+                                        ) : 'No Deadline'}
                                     </div>
 
-                                    {exam.marks_obtained !== undefined && exam.marks_obtained !== null ? (
-                                        <div className="flex items-center justify-between p-3 bg-green-50/50 rounded-2xl border border-green-100/50 shadow-sm shadow-green-100/20">
-                                            <div className="flex items-center gap-2 text-green-700">
-                                                <BarChart2 className="w-4 h-4" />
-                                                <span className="text-xs font-bold uppercase tracking-wider">Score</span>
+                                    <div className="font-bold text-gray-900">
+                                        {exam.marks_obtained !== undefined && exam.marks_obtained !== null ? (
+                                            <span>
+                                                {exam.marks_obtained} <span className="text-gray-400 font-normal">/ {exam.total_marks}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400 uppercase text-xs font-semibold">Not Graded</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+
+                    {/* Desktop Table View */}
+                    <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-50/50 border-b border-gray-100">
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Exam Title</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Deadline</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {exams.map((exam) => (
+                                    <tr key={exam.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => window.location.href = `/dashboard/student-exams/${exam.id}`}>
+                                        <td className="px-6 py-4">
+                                            <Link to={`/dashboard/student-exams/${exam.id}`} className="block group">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="p-2 bg-blue-50 rounded-lg shrink-0 group-hover:bg-blue-100 transition-colors">
+                                                        <FileText className="w-5 h-5 text-blue-600" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">{exam.title}</h3>
+                                                        <span className="text-xs text-gray-500 capitalize">{exam.exam_type} Exam</span>
+                                                    </div>
+                                                </div>
+                                            </Link>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                                {exam.subject}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center text-sm text-gray-500">
+                                                <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+                                                {exam.deadline ? (
+                                                    new Date(exam.deadline).toLocaleDateString(undefined, {
+                                                        year: 'numeric',
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })
+                                                ) : (
+                                                    <span className="text-gray-400">No Deadline</span>
+                                                )}
                                             </div>
                                             <span className="font-bold text-gray-900">
                                                 {exam.marks_obtained} <span className="text-gray-400 font-normal">/ {exam.total_marks}</span>
