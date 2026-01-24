@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text
+from sqlalchemy import Column, Integer, String, LargeBinary, ForeignKey, DateTime, Date, Boolean, Text, UniqueConstraint, Index, ForeignKeyConstraint, JSON, Time
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from database import Base
@@ -45,6 +45,7 @@ class Teacher(Base):
 
     user = relationship("User", back_populates="teacher_profile")
     quizzes = relationship("Quiz", back_populates="teacher")
+    batches = relationship("TeacherBatch", back_populates="teacher")
 
 # ===================== STUDENTS =====================
 
@@ -53,10 +54,12 @@ class Student(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=False)
     full_name = Column(String(255))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     user = relationship("User", back_populates="student_profile")
     quiz_attempts = relationship("QuizAttempt", back_populates="student")
+    quiz_assignments = relationship("QuizAssignment", back_populates="student")
 
 # ===================== ADMINS =====================
 
@@ -97,6 +100,7 @@ class Quiz(Base):
 
     teacher = relationship("Teacher", back_populates="quizzes")
     attempts = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")
+    assignments = relationship("QuizAssignment", back_populates="quiz", cascade="all, delete-orphan")
 
 # ===================== QUIZ ATTEMPTS =====================
 
@@ -117,6 +121,20 @@ class QuizAttempt(Base):
 
     student = relationship("Student", back_populates="quiz_attempts")
     quiz = relationship("Quiz", back_populates="attempts")
+
+# ===================== QUIZ ASSIGNMENTS =====================
+
+class QuizAssignment(Base):
+    __tablename__ = "quiz_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status = Column(String(50), default="assigned") # assigned / attempted
+
+    student = relationship("Student", back_populates="quiz_assignments")
+    quiz = relationship("Quiz", back_populates="assignments")
 
 # ===================== QUESTIONS =====================
 
@@ -269,6 +287,11 @@ class ExamEvaluation(Base):
     feedback = Column(Text)
     is_final = Column(Boolean)
     checked_at = Column(DateTime(timezone=True))
+    
+    # Optional Feedback File
+    feedback_file_data = Column(LargeBinary)
+    feedback_file_mime = Column(String(50))
+    feedback_file_name = Column(String(255))
 
 class ExamReevaluation(Base):
     __tablename__ = "exam_reevaluations"
@@ -289,3 +312,84 @@ class ExamEvent(Base):
     event_type = Column(String(50))
     triggered_by = Column(String(50))
     event_time = Column(DateTime(timezone=True))
+
+# ===================== BATCH MANAGEMENT =====================
+
+class TeacherBatch(Base):
+    __tablename__ = "teacher_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    is_default = Column(Boolean, default=False)
+    
+    # Scheduling & Lifecycle
+    run_days = Column(JSON, nullable=True)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    timezone = Column(String(50), nullable=True)
+    status = Column(String(20), default="active", nullable=False)
+
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    teacher = relationship("Teacher", back_populates="batches")
+
+
+    __table_args__ = (
+        UniqueConstraint('teacher_id', 'name', name='uix_teacher_batch_name'),
+        Index('uix_teacher_default_batch', 'teacher_id', unique=True, postgresql_where=(is_default == True)),
+    )
+
+    attendance_sessions = relationship("AttendanceSession", back_populates="batch", cascade="all, delete-orphan")
+
+class StudentBatchMap(Base):
+    __tablename__ = "student_batch_map"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    batch_id = Column(Integer, ForeignKey("teacher_batches.id"), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('teacher_id', 'student_id', name='uix_teacher_student_map'),
+    )
+
+# ===================== ATTENDANCE =====================
+
+class AttendanceSession(Base):
+    __tablename__ = "attendance_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("teacher_batches.id"), nullable=False)
+    attendance_date = Column(Date, nullable=False)
+    created_by = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Constraints: One session per batch per day
+    __table_args__ = (
+        UniqueConstraint('batch_id', 'attendance_date', name='uix_batch_date_attendance'),
+    )
+
+    batch = relationship("TeacherBatch", back_populates="attendance_sessions")
+    records = relationship("AttendanceRecord", back_populates="session", cascade="all, delete-orphan")
+
+
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("attendance_sessions.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    status = Column(String(10), nullable=False) # 'P', 'A', 'TA'
+    marked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    session = relationship("AttendanceSession", back_populates="records")
+    student = relationship("Student")
+
+    __table_args__ = (
+        UniqueConstraint('session_id', 'student_id', name='uix_session_student_record'),
+    )
+

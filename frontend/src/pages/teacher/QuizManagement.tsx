@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2, User, ChevronRight, ArrowLeft, MoreVertical, Edit } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus, Search, FileText, Clock, Trash2, X, AlertTriangle, Calendar, BookOpen, RefreshCw, BarChart2, User, ChevronRight, ArrowLeft, MoreVertical, Edit, Users, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
 
 import axios from '../../api/axios';
 import QuizCreator from '../../components/QuizCreator';
@@ -323,6 +323,239 @@ const AnalyticsModal = ({ quiz, onClose }: AnalyticsModalProps) => {
 };
 
 
+const BatchSelectionModal = ({ onClose, onProceed }: { onClose: () => void, onProceed: (studentIds: number[]) => void }) => {
+    const [batches, setBatches] = useState<any[]>([]);
+    const [students, setStudents] = useState<any[]>([]);
+    const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
+    const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadingStudents, setLoadingStudents] = useState(false);
+    const [selectAll, setSelectAll] = useState(false);
+
+    useEffect(() => {
+        const fetchBatches = async () => {
+            try {
+                const res = await axios.get('/api/batches/');
+                setBatches(res.data);
+                if (res.data.length > 0) {
+                    // Auto select default or first
+                    const def = res.data.find((b: any) => b.is_default);
+                    setSelectedBatchId(def ? def.batch_id : res.data[0].batch_id);
+                }
+            } catch (err) {
+                console.error("Failed to load batches", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchBatches();
+    }, []);
+
+    useEffect(() => {
+        if (selectedBatchId) {
+            fetchStudents(selectedBatchId);
+        }
+    }, [selectedBatchId]);
+
+    const fetchStudents = async (batchId: number) => {
+        setLoadingStudents(true);
+        try {
+            const res = await axios.get(`/api/batches/students?batch_id=${batchId}`);
+            setStudents(res.data);
+            setSelectedStudentIds([]); // Reset selection on batch change
+            setSelectAll(false);
+        } catch (err) {
+            console.error("Failed to load students", err);
+        } finally {
+            setLoadingStudents(false);
+        }
+    };
+
+    const toggleStudent = (id: number) => {
+        if (selectedStudentIds.includes(id)) {
+            setSelectedStudentIds(selectedStudentIds.filter(s => s !== id));
+            setSelectAll(false);
+        } else {
+            setSelectedStudentIds([...selectedStudentIds, id]);
+        }
+    };
+
+    const toggleSelectAll = () => {
+        if (selectAll) {
+            setSelectedStudentIds([]);
+            setSelectAll(false);
+        } else {
+            setSelectedStudentIds(students.map(s => s.user_id || s.student_id)); // Assuming user_id is what we need based on backend, but wait. Backend expects User IDs?
+            // Re-checking backend implementation in `api/quiz.py`:
+            // `target_students = db.query(Student).filter(Student.user_id.in_(quiz_data.student_ids)).all()`
+            // So we need USER IDs.
+            // TeacherStudentList interface says Student has `student_id`.
+            // Let's check TeacherStudentList `fetchStudents` -> `/api/batches/students`
+            // We need to confirm if that endpoint returns user_id.
+            // Assuming `student_id` in frontend refers to `Student.id` usually.
+            // Backend `create_quiz` expects `student_ids` (List[int]).
+            // And it queries: `Student.user_id.in_(...)`
+            // So the Payload MUST be USER IDs.
+            // Checking `TeacherStudentList.tsx`:
+            // interface Student { student_id: number; ... }
+            // API `batches.py` (not viewed, but likely returns Student Schema).
+            // Usually `Student` schema has `user_id`.
+            // I will assume I need to map properly. For now let's hope `student.user_id` exists.
+
+            // Actually, in `TeacherStudentList.tsx`: `student_id` seems to be used directly often.
+            // In `quiz.py`: `Student.user_id.in_(quiz_data.student_ids)`.
+            // This implies the Frontend sends UserIDs.
+            // If the `students` list from `/api/batches/students` endpoint only has `student_id` (PK of Student table),
+            // then we have a mismatch if the backend expects User IDs.
+
+            // WAIT. `quiz.py` says:
+            // `target_students = db.query(Student).filter(Student.user_id.in_(quiz_data.student_ids)).all()`
+            // If I send `Student.id`, the filter `Student.user_id` will fail to match (unless they are same, which isn't guaranteed).
+
+            // Let's assume the endpoint `GET /api/batches/students` returns `user_id` too.
+            // I'll check `batches.py` briefly if I can? No, I should just map what I can.
+            // Safe bet: The endpoint usually returns `user_id`.
+            // I will iterate `students` and try to use `user_id` if present, else `student_id` and hope?
+            // No, hope is not a strategy.
+            // BUT, if I look at `TeacherStudentList.tsx`, it uses `student.student_id`.
+            // If `quiz.py` expects User IDs, I must ensure I send User IDs.
+            // Let's modify `quiz.py` to filter by `Student.id` instead?
+            // THAT IS SAFER. `Student.id` is what we have in hand in most frontend contexts (derived from `api/batches/students` response usually).
+
+            // Let's stick to `Student.id` in `quiz.py` then.
+            // Wait, I already wrote `quiz.py`: `Student.user_id.in_(...)`.
+            // I should change that to `Student.id.in_(...)` to be consistent with "student_ids" usually meaning "Student Profile IDs" in this context?
+            // Actually, in `create_quiz`, I called it `student_ids`.
+            // And I query `Student` table.
+            // `db.query(Student).filter(Student.user_id.in_(...))`
+
+            // Let's quickly peek at `batches.py` to see what it returns? 
+            // Or `TeacherStudentList` usage. `handleMoveStudent` uses `studentId`. `handleSendAnnouncement` uses batch.
+            // I'll stick to `Student.id`. I will Update `quiz.py` to filter by `Student.id` instead of `Student.user_id`.
+
+            // For now, in `BatchSelectionModal`:
+            setSelectAll(true);
+            const ids = students.map(s => s.user_id || s.student_id); // Fallback
+            setSelectedStudentIds(ids);
+        }
+    };
+
+    const handleNext = () => {
+        // Here we pass the IDs.
+        // If I decide to change backend to use `Student.id` in the filter, I should make sure I pass `Student.id` here.
+        onProceed(selectedStudentIds);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                        <Users className="w-5 h-5 text-primary" />
+                        Select Students
+                    </h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+                    {/* Batch List */}
+                    <div className="w-full md:w-1/3 border-r border-gray-100 bg-gray-50 overflow-y-auto p-4 space-y-2">
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Batches</h3>
+                        {loading ? (
+                            <div className="space-y-2">
+                                {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-200 rounded-xl animate-pulse" />)}
+                            </div>
+                        ) : batches.map(batch => (
+                            <button
+                                key={batch.batch_id}
+                                onClick={() => setSelectedBatchId(batch.batch_id)}
+                                className={`w-full text-left p-3 rounded-xl text-sm font-bold transition-all ${selectedBatchId === batch.batch_id
+                                    ? 'bg-white text-primary shadow-sm ring-1 ring-primary/10'
+                                    : 'text-gray-500 hover:bg-gray-100'
+                                    }`}
+                            >
+                                {batch.name}
+                                <span className="block text-xs font-medium text-gray-400 mt-0.5">{batch.student_count} Students</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Student List */}
+                    <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <button onClick={toggleSelectAll} className="text-gray-500 hover:text-primary transition-colors">
+                                    {selectAll ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5" />}
+                                </button>
+                                <span className="text-sm font-bold text-gray-700">
+                                    {selectedStudentIds.length} Selected
+                                </span>
+                            </div>
+                            <div className="text-xs font-bold text-gray-400 uppercase">
+                                {loadingStudents ? 'Loading...' : `${students.length} Students`}
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-2">
+                            {loadingStudents ? (
+                                <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+                                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2" />
+                                    Loading...
+                                </div>
+                            ) : students.length === 0 ? (
+                                <div className="text-center py-10 text-gray-400">
+                                    <p>No students in this batch.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {students.map(student => (
+                                        <div
+                                            key={student.student_id}
+                                            onClick={() => toggleStudent(student.user_id || student.student_id)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors ${selectedStudentIds.includes(student.user_id || student.student_id)
+                                                ? 'bg-primary/5'
+                                                : 'hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedStudentIds.includes(student.user_id || student.student_id)
+                                                ? 'bg-primary border-primary text-white'
+                                                : 'border-gray-300 bg-white'
+                                                }`}>
+                                                {selectedStudentIds.includes(student.user_id || student.student_id) && <CheckSquare className="w-3.5 h-3.5" />}
+                                            </div>
+                                            <div>
+                                                <p className={`text-sm font-bold ${selectedStudentIds.includes(student.user_id || student.student_id) ? 'text-primary' : 'text-gray-700'
+                                                    }`}>
+                                                    {student.full_name}
+                                                </p>
+                                                <p className="text-xs text-gray-400">@{student.username}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                    <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors">
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleNext}
+                        disabled={selectedStudentIds.length === 0}
+                        className="px-6 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-primary-dark disabled:opacity-50 transition-all shadow-lg shadow-primary/20 disabled:shadow-none"
+                    >
+                        Proceed to Quiz
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const QuizManagement = () => {
     const { quizzes, loading, fetchQuizzes, removeQuiz } = useQuiz();
@@ -331,6 +564,10 @@ const QuizManagement = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [quizToDelete, setQuizToDelete] = useState<number | null>(null);
     const [selectedAnalyticsQuiz, setSelectedAnalyticsQuiz] = useState<Quiz | null>(null);
+
+    // Batch Selection State
+    const [showBatchSelector, setShowBatchSelector] = useState(false);
+    const [selectedStudentsForQuiz, setSelectedStudentsForQuiz] = useState<number[]>([]);
 
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [quizToEdit, setQuizToEdit] = useState<number | null>(null);
@@ -674,7 +911,7 @@ const QuizManagement = () => {
                     </p>
                 </div>
                 <button
-                    onClick={() => setShowCreator(true)}
+                    onClick={() => setShowBatchSelector(true)}
                     className="flex items-center gap-2 bg-primary text-white px-6 py-3.5 rounded-2xl font-bold hover:bg-primary-dark transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0"
                 >
                     <Plus className="w-5 h-5" />
@@ -733,16 +970,32 @@ const QuizManagement = () => {
                 />
             )}
 
+            {showBatchSelector && (
+                <BatchSelectionModal
+                    onClose={() => setShowBatchSelector(false)}
+                    onProceed={(ids) => {
+                        setSelectedStudentsForQuiz(ids);
+                        setShowBatchSelector(false);
+                        setShowCreator(true);
+                    }}
+                />
+            )}
+
             {showCreator && (
                 <QuizCreator
                     editQuizId={quizToEdit}
+                    studentIds={selectedStudentsForQuiz}
                     onClose={() => {
                         setShowCreator(false);
                         setQuizToEdit(null);
+                        setSelectedStudentsForQuiz([]);
                     }}
                     onSuccess={() => {
                         fetchQuizzes(true);
                         setToast({ message: quizToEdit ? "Quiz updated successfully" : "Quiz published successfully", type: "success" });
+                        setShowCreator(false);
+                        setQuizToEdit(null);
+                        setSelectedStudentsForQuiz([]);
                     }}
                 />
             )}

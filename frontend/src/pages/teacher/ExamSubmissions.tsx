@@ -5,10 +5,7 @@ import {
     CheckCircle2,
     Clock,
     ArrowLeft,
-    PenTool,
-    Calendar,
-    X,
-    Save
+    PenTool
 } from 'lucide-react';
 import axios from '../../api/axios';
 import Toast, { type ToastType } from '../../components/Toast';
@@ -30,7 +27,7 @@ interface ExamDetails {
     title: string;
     subject: string;
     total_marks: number;
-    deadline: string; // Added deadline
+    deadline: string;
 }
 
 export default function ExamSubmissions() {
@@ -40,11 +37,6 @@ export default function ExamSubmissions() {
     const [exam, setExam] = useState<ExamDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-
-    // Edit Deadline State
-    const [isEditDeadlineOpen, setIsEditDeadlineOpen] = useState(false);
-    const [newDeadline, setNewDeadline] = useState('');
-    const [updatingDeadline, setUpdatingDeadline] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     useEffect(() => {
@@ -64,55 +56,11 @@ export default function ExamSubmissions() {
             setExam(foundExam || null);
             setSubmissions(subsRes.data);
 
-            // Initialize newDeadline if exam found
-            if (foundExam && foundExam.deadline) {
-                // Convert UTC string to local datetime-local format
-                // API returns ISO string "2023-10-27T10:00:00+00:00" or similar
-                // Input expected format: "YYYY-MM-DDTHH:mm"
-                const date = new Date(foundExam.deadline);
-                // Adjust to local time string for input
-                // We need 'YYYY-MM-DDTHH:mm' in local time
-                const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-                setNewDeadline(localIso);
-            }
-
         } catch (error) {
             console.error("Failed to fetch data", error);
             setToast({ message: "Failed to load exam data", type: "error" });
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleUpdateDeadline = async () => {
-        if (!exam) return;
-
-        try {
-            setUpdatingDeadline(true);
-            // newDeadline is from input type="datetime-local", so it is local time string
-            // We can send it as ISO string. Backend handles it.
-            // But verify it is future
-            if (new Date(newDeadline) < new Date()) {
-                setToast({ message: "Deadline must be in the future", type: "error" });
-                setUpdatingDeadline(false);
-                return;
-            }
-
-            await axios.patch(`/api/exams/${exam.id}/deadline`, {
-                new_deadline: new Date(newDeadline).toISOString()
-            });
-
-            setToast({ message: "Deadline updated successfully", type: "success" });
-            setIsEditDeadlineOpen(false);
-
-            // Update local state
-            setExam(prev => prev ? { ...prev, deadline: new Date(newDeadline).toISOString() } : null);
-
-        } catch (error: any) {
-            console.error("Failed to update deadline", error);
-            setToast({ message: error.response?.data?.detail || "Failed to update deadline", type: "error" });
-        } finally {
-            setUpdatingDeadline(false);
         }
     };
 
@@ -159,15 +107,6 @@ export default function ExamSubmissions() {
                             {exam ? `${exam.subject} • ${exam.total_marks} Marks` : 'Manage student submissions'}
                         </p>
                     </div>
-                    {exam && (
-                        <button
-                            onClick={() => setIsEditDeadlineOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm font-medium"
-                        >
-                            <Calendar className="w-4 h-4" />
-                            Edit Deadline
-                        </button>
-                    )}
                 </div>
             </div>
 
@@ -257,61 +196,6 @@ export default function ExamSubmissions() {
                     )}
                 </div>
             </div>
-
-            {/* Edit Deadline Modal */}
-            {isEditDeadlineOpen && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl transform transition-all">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-gray-900">Edit Exam Deadline</h2>
-                            <button onClick={() => setIsEditDeadlineOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">New Deadline</label>
-                                <input
-                                    type="datetime-local"
-                                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none font-medium"
-                                    value={newDeadline}
-                                    onChange={(e) => setNewDeadline(e.target.value)}
-                                />
-                                <p className="text-xs text-gray-500 mt-2">
-                                    Students will be notified via email about this change.
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setIsEditDeadlineOpen(false)}
-                                    className="flex-1 py-3 text-gray-600 font-bold bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleUpdateDeadline}
-                                    disabled={updatingDeadline}
-                                    className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary-dark transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {updatingDeadline ? (
-                                        <>
-                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            Updating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save className="w-4 h-4" />
-                                            Save Changes
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
