@@ -870,7 +870,7 @@ const StudyPlanner = () => {
     });
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8">
+        <div className="max-w-5xl mx-auto space-y-8 overflow-x-hidden p-4 sm:p-0">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-secondary-dark mb-2">Smart Study Planner</h1>
@@ -879,14 +879,14 @@ const StudyPlanner = () => {
                 <div className="flex flex-wrap gap-3">
                     <button
                         onClick={handleGenerateClick}
-                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-primary text-white px-6 py-4 rounded-2xl font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
                     >
                         <Sparkles className="w-5 h-5" />
                         Generate Plan
                     </button>
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-white text-secondary-dark px-6 py-4 rounded-2xl font-bold border-2 border-secondary-light/20 hover:border-primary/30 active:scale-[0.98] transition-all"
+                        className="flex-1 min-w-[160px] flex items-center justify-center gap-2 bg-white text-secondary-dark px-6 py-4 rounded-2xl font-bold border-2 border-secondary-light/20 hover:border-primary/30 transition-all"
                     >
                         <Plus className="w-5 h-5" />
                         Custom Task
@@ -898,13 +898,13 @@ const StudyPlanner = () => {
                 {/* Calendar Strip */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-secondary-light/20">
-                        <div className="flex items-center justify-between mb-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                             <h2 className="text-lg font-bold text-secondary-dark">
                                 {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                             </h2>
-                            <div className="flex gap-2 items-center">
+                            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center w-full sm:w-auto">
                                 {/* Search Input */}
-                                <div className="relative w-64 mr-2">
+                                <div className="relative w-full sm:w-64">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-light" />
                                     <input
                                         id="task-search-input"
@@ -912,60 +912,63 @@ const StudyPlanner = () => {
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         placeholder='Search tasks...'
-                                        className="w-full pl-9 pr-8 py-2 bg-secondary-light/5 border border-secondary-light/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 text-secondary-dark placeholder:text-secondary-light/50 transition-all text-sm font-medium"
+                                        className="w-full pl-9 pr-10 py-3 bg-secondary-light/5 border border-secondary-light/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 text-secondary-dark placeholder:text-secondary-light/50 transition-all text-sm font-medium"
                                     />
                                     {searchQuery && (
                                         <button
                                             onClick={() => setSearchQuery('')}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-secondary-light/20 rounded-full transition-colors"
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-secondary-light/20 rounded-full transition-colors"
                                         >
-                                            <X className="w-3 h-3 text-secondary" />
+                                            <X className="w-4 h-4 text-secondary" />
                                         </button>
                                     )}
                                 </div>
 
-                                <button
-                                    onClick={() => {
-                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
-                                            d.fullDate.getDate() === selectedDate.getDate() &&
-                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
-                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        );
-                                        if (selectedIndex > 0) {
-                                            setSelectedDate(visibleCalendarDays[selectedIndex - 1].fullDate);
-                                        }
-                                    }}
-                                    disabled={visibleCalendarDays.length === 0 ||
-                                        visibleCalendarDays.findIndex(d =>
-                                            d.fullDate.getDate() === selectedDate.getDate() &&
-                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
-                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        ) <= 0}
-                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronRight className="w-5 h-5 text-secondary rotate-180" />
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        const selectedIndex = visibleCalendarDays.findIndex(d =>
-                                            d.fullDate.getDate() === selectedDate.getDate() &&
-                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
-                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        );
-                                        if (selectedIndex < visibleCalendarDays.length - 1 && selectedIndex !== -1) {
-                                            setSelectedDate(visibleCalendarDays[selectedIndex + 1].fullDate);
-                                        }
-                                    }}
-                                    disabled={visibleCalendarDays.length === 0 ||
-                                        visibleCalendarDays.findIndex(d =>
-                                            d.fullDate.getDate() === selectedDate.getDate() &&
-                                            d.fullDate.getMonth() === selectedDate.getMonth() &&
-                                            d.fullDate.getFullYear() === selectedDate.getFullYear()
-                                        ) >= visibleCalendarDays.length - 1}
-                                    className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                    <ChevronRight className="w-5 h-5 text-secondary" />
-                                </button>
+                                <div className="flex items-center justify-end gap-2 mt-2 sm:mt-0">
+
+                                    <button
+                                        onClick={() => {
+                                            const selectedIndex = visibleCalendarDays.findIndex(d =>
+                                                d.fullDate.getDate() === selectedDate.getDate() &&
+                                                d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                                d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                            );
+                                            if (selectedIndex > 0) {
+                                                setSelectedDate(visibleCalendarDays[selectedIndex - 1].fullDate);
+                                            }
+                                        }}
+                                        disabled={visibleCalendarDays.length === 0 ||
+                                            visibleCalendarDays.findIndex(d =>
+                                                d.fullDate.getDate() === selectedDate.getDate() &&
+                                                d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                                d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                            ) <= 0}
+                                        className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                    >
+                                        <ChevronRight className="w-5 h-5 text-secondary rotate-180" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const selectedIndex = visibleCalendarDays.findIndex(d =>
+                                                d.fullDate.getDate() === selectedDate.getDate() &&
+                                                d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                                d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                            );
+                                            if (selectedIndex < visibleCalendarDays.length - 1 && selectedIndex !== -1) {
+                                                setSelectedDate(visibleCalendarDays[selectedIndex + 1].fullDate);
+                                            }
+                                        }}
+                                        disabled={visibleCalendarDays.length === 0 ||
+                                            visibleCalendarDays.findIndex(d =>
+                                                d.fullDate.getDate() === selectedDate.getDate() &&
+                                                d.fullDate.getMonth() === selectedDate.getMonth() &&
+                                                d.fullDate.getFullYear() === selectedDate.getFullYear()
+                                            ) >= visibleCalendarDays.length - 1}
+                                        className="p-2 hover:bg-secondary-light/10 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                    >
+                                        <ChevronRight className="w-5 h-5 text-secondary" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div className="flex overflow-x-auto pb-4 gap-2 scrollbar-thin scrollbar-thumb-secondary-light/20 scrollbar-track-transparent">
@@ -977,7 +980,7 @@ const StudyPlanner = () => {
                                         key={index}
                                         onClick={() => setSelectedDate(item.fullDate)}
                                         className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all min-w-[64px] flex-shrink-0 ${isSelected
-                                            ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                            ? 'bg-primary text-white shadow-lg shadow-primary/30'
                                             : 'hover:bg-secondary-light/10 text-secondary border border-transparent hover:border-secondary-light/20'
                                             }`}
                                     >
@@ -1085,7 +1088,7 @@ const StudyPlanner = () => {
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: index * 0.1 }}
-                                            className="group bg-white p-5 rounded-2xl shadow-sm border border-secondary-light/20 hover:shadow-md transition-all flex items-center gap-4"
+                                            className="group bg-white p-5 rounded-2xl shadow-sm border border-secondary-light/20 transition-all flex items-center gap-4"
                                         >
                                             <div className="flex flex-col items-center gap-1 min-w-[80px]">
                                                 <span className="text-sm font-bold text-secondary-dark">{formatTime(task.start_time)}</span>
