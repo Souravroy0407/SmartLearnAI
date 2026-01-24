@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import chat, quiz, study_planner, ai, goals, admin, exams, batches
@@ -46,13 +48,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+    # Log the full error for backend observability
+    print(f"CRITICAL DB ERROR: {str(exc)}")
+    # Return a safe, generic error message to the client
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "A database error occurred. Please try again later."},
+    )
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to SmartLearn AI Backend"}
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+def health_check(db: Session = Depends(database.get_db)):
+    try:
+        # Run a lightweight query to check DB connectivity
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        # Log error for backend observability
+        print(f"Health check failed: {str(e)}")
+        raise HTTPException(
+            status_code=503, 
+            detail="Service unhealthy: Database connection failed"
+        )
 
 import os
 
